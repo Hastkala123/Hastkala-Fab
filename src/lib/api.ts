@@ -2,7 +2,11 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import { ZodError, type ZodType } from "zod";
-import { AuthError, getCurrentUser, isAdminRole, type SessionUser } from "./auth";
+import { AuthError, getCurrentUser, type SessionUser } from "./auth";
+import { hasPermission, type Permission } from "@/server/auth/permissions";
+import { TransitionError } from "@/server/orders/transitions";
+import { UserError } from "@/server/errors";
+import { StockError } from "@/server/inventory/stock";
 import { verifyCsrf } from "./csrf";
 import { getClientIp, rateLimit } from "./ratelimit";
 import { isProd } from "./env";
@@ -80,8 +84,10 @@ export async function parseJson<T>(
 }
 
 type GuardOptions = {
-  /** "user" requires any signed-in account; "admin" requires ADMIN/SUPERADMIN. */
-  auth?: "none" | "user" | "admin";
+  /** "user" requires any signed-in account; "staff" requires a staff member. */
+  auth?: "none" | "user" | "staff";
+  /** With auth "staff": the permission the staff member must hold. */
+  permission?: Permission;
   /** Set false only for genuinely safe idempotent endpoints. */
   csrf?: boolean;
   limit?: { bucket: string; limit: number; window: number };
@@ -97,7 +103,7 @@ export type GuardContext = { user: SessionUser | null };
 export async function guard(
   options: GuardOptions = {},
 ): Promise<{ ok: true; ctx: GuardContext } | { ok: false; response: NextResponse }> {
-  const { auth = "none", csrf = true, limit } = options;
+  const { auth = "none", csrf = true, limit, permission } = options;
 
   if (csrf) {
     const result = await verifyCsrf();
@@ -112,7 +118,7 @@ export async function guard(
   if (auth === "user" && !user) {
     return { ok: false, response: fail("Please sign in to continue", 401) };
   }
-  if (auth === "admin" && (!user || !isAdminRole(user.role))) {
+  if (auth === "staff" && (!user || !user.isStaff || (permission && !hasPermission(user, permission)))) {
     // Same 403 whether not-signed-in or signed-in-without-rights, so the
     // endpoint does not confirm that an admin area exists here.
     return { ok: false, response: fail("You do not have access to this resource", 403) };
@@ -158,6 +164,12 @@ export function handler(
       }
       if (error instanceof ZodError) {
         return fail("Please correct the highlighted fields", 422, zodFields(error));
+      }
+      if (error instanceof TransitionError || error instanceof StockError) {
+        return fail(error.message, 409);
+      }
+      if (error instanceof UserError) {
+        return fail(error.message, error.status, error.fields);
       }
       console.error("[api] unhandled error:", error);
       return fail("Something went wrong. Please try again.", 500);

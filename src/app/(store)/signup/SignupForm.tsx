@@ -24,8 +24,8 @@ export default function SignupForm({ defaultWholesale }: { defaultWholesale: boo
   const [pending, setPending] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
-  const [accountType, setAccountType] = useState<"CUSTOMER" | "WHOLESALE">(
-    defaultWholesale ? "WHOLESALE" : "CUSTOMER",
+  const [accountType, setAccountType] = useState<"RETAIL" | "WHOLESALE">(
+    defaultWholesale ? "WHOLESALE" : "RETAIL",
   );
   const [password, setPassword] = useState("");
 
@@ -53,6 +53,7 @@ export default function SignupForm({ defaultWholesale }: { defaultWholesale: boo
         businessName: String(form.get("businessName") ?? ""),
         gstin: String(form.get("gstin") ?? ""),
         acceptTerms: form.get("acceptTerms") === "on",
+        marketingOptIn: form.get("marketingOptIn") === "on",
       },
     });
 
@@ -69,7 +70,7 @@ export default function SignupForm({ defaultWholesale }: { defaultWholesale: boo
         : "Welcome to Hastkala Fab!",
       "success",
     );
-    router.replace(result.data.requiresApproval ? "/account?pending=1" : "/account");
+    router.replace("/account");
     router.refresh();
   }
 
@@ -82,7 +83,7 @@ export default function SignupForm({ defaultWholesale }: { defaultWholesale: boo
         <div className="mt-1 grid grid-cols-2 gap-2">
           {(
             [
-              { value: "CUSTOMER", title: "Personal", detail: "Shop for yourself" },
+              { value: "RETAIL", title: "Personal", detail: "Shop for yourself" },
               { value: "WHOLESALE", title: "Wholesale", detail: "Trade pricing" },
             ] as const
           ).map((option) => (
@@ -265,6 +266,14 @@ export default function SignupForm({ defaultWholesale }: { defaultWholesale: boo
             {fields.acceptTerms}
           </p>
         )}
+        <label className="mt-3 flex items-start gap-2.5 text-sm text-slate-600">
+          <input
+            name="marketingOptIn"
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-cotton-400 accent-indigo-ink-800"
+          />
+          <span>Email me about new prints and offers (optional — you can stop any time).</span>
+        </label>
       </div>
 
       <SubmitButton

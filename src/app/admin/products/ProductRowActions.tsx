@@ -10,12 +10,12 @@ export default function ProductRowActions({
   productId,
   title,
   slug,
-  hasOrders,
+  archived,
 }: {
   productId: string;
   title: string;
   slug: string;
-  hasOrders: boolean;
+  archived: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -24,7 +24,7 @@ export default function ProductRowActions({
 
   async function remove() {
     setPending(true);
-    const result = await apiRequest<{ softDeleted: boolean; message?: string }>(
+    const result = await apiRequest<{ archived: boolean; message?: string }>(
       "/api/admin/products",
       { method: "DELETE", body: { id: productId } },
     );
@@ -36,7 +36,7 @@ export default function ProductRowActions({
       return;
     }
 
-    toast(result.data.message ?? `"${title}" deleted`, "success");
+    toast(result.data.message ?? `"${title}" archived`, "success");
     router.refresh();
   }
 
@@ -44,7 +44,7 @@ export default function ProductRowActions({
     return (
       <div className="flex items-center justify-end gap-1.5">
         <span className="text-xs text-slate-500">
-          {hasOrders ? "Hide it?" : "Delete?"}
+          Archive it?
         </span>
         <button
           type="button"
@@ -69,7 +69,7 @@ export default function ProductRowActions({
   return (
     <div className="flex items-center justify-end gap-1">
       <Link
-        href={`/product/${slug}`}
+        href={`/products/${slug}?preview=1`}
         target="_blank"
         rel="noreferrer"
         className="rounded px-2 py-1 text-xs font-semibold text-slate-500 transition hover:bg-cotton-200 hover:text-indigo-ink-800"
@@ -83,13 +83,15 @@ export default function ProductRowActions({
       >
         Edit
       </Link>
-      <button
-        type="button"
-        onClick={() => setConfirming(true)}
-        className="rounded px-2 py-1 text-xs font-semibold text-madder-600 transition hover:bg-madder-50"
-      >
-        {hasOrders ? "Hide" : "Delete"}
-      </button>
+      {!archived && (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          className="rounded px-2 py-1 text-xs font-semibold text-madder-600 transition hover:bg-madder-50"
+        >
+          Archive
+        </button>
+      )}
     </div>
   );
 }

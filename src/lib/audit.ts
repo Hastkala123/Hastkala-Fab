@@ -1,32 +1,36 @@
 import "server-only";
 
+import type { Prisma } from "@prisma/client";
 import { db } from "./db";
-import { hashIp } from "./auth";
-import { getClientIp } from "./ratelimit";
+import { hashIp, type SessionUser } from "./auth";
+import { getClientIp, getUserAgent } from "./ratelimit";
 
 /**
- * Records a privileged action. Deliberately never throws: a logging failure
- * must not roll back the business operation the admin just performed.
+ * Records a privileged action (who changed what, before and after).
+ * Deliberately never throws: a logging failure must not undo the change the
+ * staff member just made.
  */
 export async function audit(params: {
-  userId?: string | null;
-  actorEmail?: string | null;
+  actor: Pick<SessionUser, "id" | "email" | "phone" | "name"> | null;
   action: string;
-  entity: string;
+  entityType: string;
   entityId?: string | null;
-  metadata?: Record<string, unknown>;
+  before?: unknown;
+  after?: unknown;
 }): Promise<void> {
   try {
-    const ip = await getClientIp();
+    const [ip, userAgent] = await Promise.all([getClientIp(), getUserAgent()]);
     await db.auditLog.create({
       data: {
-        userId: params.userId ?? null,
-        actorEmail: params.actorEmail ?? null,
+        actorId: params.actor?.id ?? null,
+        actorLabel: params.actor ? (params.actor.email ?? params.actor.phone ?? params.actor.name) : "system",
         action: params.action,
-        entity: params.entity,
+        entityType: params.entityType,
         entityId: params.entityId ?? null,
-        metadata: params.metadata ? JSON.stringify(redact(params.metadata)) : null,
+        before: toJson(params.before),
+        after: toJson(params.after),
         ipHash: hashIp(ip),
+        userAgent: userAgent?.slice(0, 300) ?? null,
       },
     });
   } catch (error) {
@@ -34,34 +38,34 @@ export async function audit(params: {
   }
 }
 
+function toJson(value: unknown): Prisma.InputJsonValue | undefined {
+  if (value === undefined || value === null) return undefined;
+  return redact(JSON.parse(JSON.stringify(value))) as Prisma.InputJsonValue;
+}
+
 const SENSITIVE_KEYS = [
   "password",
   "passwordhash",
-  "newpassword",
-  "currentpassword",
-  "confirmpassword",
   "token",
   "secret",
   "authorization",
   "cookie",
   "card",
   "cvv",
-  "gstin",
+  "totp",
+  "recovery",
 ];
 
 /** Strips credentials before they reach the log table. */
-function redact(input: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(input)) {
-    if (SENSITIVE_KEYS.some((s) => key.toLowerCase().includes(s))) {
-      out[key] = "[redacted]";
-    } else if (typeof value === "string" && value.length > 300) {
-      out[key] = `${value.slice(0, 300)}…`;
-    } else if (value && typeof value === "object" && !Array.isArray(value)) {
-      out[key] = redact(value as Record<string, unknown>);
-    } else {
-      out[key] = value;
+function redact(input: unknown): unknown {
+  if (Array.isArray(input)) return input.slice(0, 100).map(redact);
+  if (input && typeof input === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(input)) {
+      out[key] = SENSITIVE_KEYS.some((s) => key.toLowerCase().includes(s)) ? "[redacted]" : redact(value);
     }
+    return out;
   }
-  return out;
+  if (typeof input === "string" && input.length > 2000) return `${input.slice(0, 2000)}…`;
+  return input;
 }

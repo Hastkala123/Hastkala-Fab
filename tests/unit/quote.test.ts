@@ -210,6 +210,17 @@ describe("buildQuote — wholesale (+ GST)", () => {
   });
 });
 
+describe("buildQuote — packs", () => {
+  it("judges the GST band per piece, not per pack", () => {
+    // A ₹4,000 pack of two ₹2,000 kurtis: 5% per piece, not 18% on ₹4,000.
+    const pack = buildQuote(base({ lines: [kurti({ retailUnitPrice: 400_000, piecesPerUnit: 2 })] }));
+    expect(pack.lines[0]!.rateBps).toBe(500);
+
+    const single = buildQuote(base({ lines: [kurti({ retailUnitPrice: 400_000 })] }));
+    expect(single.lines[0]!.rateBps).toBe(1800);
+  });
+});
+
 describe("buildQuote — invariants", () => {
   it("always balances: Σ taxable + Σ GST + roundOff = grand total", () => {
     const cases: QuoteInput[] = [

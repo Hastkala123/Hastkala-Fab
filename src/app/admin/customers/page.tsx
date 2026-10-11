@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { formatPrice } from "@/lib/money";
+import { formatIndianMobile } from "@/lib/phone";
 import { formatDate } from "@/lib/utils";
+import { requireStaffPage } from "@/server/auth/page-guard";
 import CustomerRoleControl from "./CustomerRoleControl";
 
 export const metadata: Metadata = { title: "Customers" };
@@ -17,26 +19,27 @@ export default async function AdminCustomersPage({
 }: {
   searchParams: Promise<{ q?: string; filter?: string; page?: string }>;
 }) {
-  const admin = await requireAdmin();
+  const admin = await requireStaffPage("customers.view");
   const params = await searchParams;
 
   const page = Math.max(1, Number(params.page) || 1);
   const search = params.q?.trim().slice(0, 80);
 
-  const where: Prisma.UserWhereInput = {};
+  const where: Prisma.UserWhereInput = { status: { not: "DELETED" } };
   if (search) {
+    const digits = search.replace(/\D/g, "");
     where.OR = [
-      { name: { contains: search } },
-      { email: { contains: search } },
-      { businessName: { contains: search } },
+      { name: { contains: search, mode: "insensitive" } },
+      { email: { contains: search, mode: "insensitive" } },
+      { wholesaleProfile: { businessName: { contains: search, mode: "insensitive" } } },
+      { wholesaleProfile: { gstin: { contains: search.toUpperCase() } } },
+      ...(digits.length >= 6 ? [{ phone: { contains: digits.slice(-10) } }] : []),
     ];
   }
-  if (params.filter === "pending-wholesale") {
-    where.role = "WHOLESALE";
-    where.isApproved = false;
-  }
-  if (params.filter === "wholesale") where.role = "WHOLESALE";
-  if (params.filter === "admins") where.role = { in: ["ADMIN", "SUPERADMIN"] };
+  if (params.filter === "pending-wholesale") where.wholesaleProfile = { status: "PENDING" };
+  if (params.filter === "wholesale") where.wholesaleProfile = { status: "APPROVED" };
+  if (params.filter === "blocked") where.status = "BLOCKED";
+  if (params.filter === "staff") where.isStaff = true;
 
   const [users, total] = await Promise.all([
     db.user.findMany({
@@ -49,15 +52,14 @@ export default async function AdminCustomersPage({
         name: true,
         email: true,
         phone: true,
-        role: true,
-        isApproved: true,
-        businessName: true,
-        gstin: true,
+        status: true,
+        isStaff: true,
         createdAt: true,
+        wholesaleProfile: { select: { businessName: true, gstin: true, status: true } },
         _count: { select: { orders: true } },
         orders: {
-          where: { status: { notIn: ["CANCELLED", "RETURNED"] } },
-          select: { total: true },
+          where: { status: { notIn: ["CANCELLED", "PAYMENT_FAILED", "PENDING_PAYMENT"] } },
+          select: { grandTotal: true },
         },
       },
     }),
@@ -89,8 +91,9 @@ export default async function AdminCustomersPage({
         {[
           { key: undefined, label: "All" },
           { key: "wholesale", label: "Wholesale" },
-          { key: "pending-wholesale", label: "Pending verification" },
-          { key: "admins", label: "Admins" },
+          { key: "pending-wholesale", label: "Wholesale to verify" },
+          { key: "blocked", label: "Blocked" },
+          { key: "staff", label: "Staff" },
         ].map((tab) => (
           <Link
             key={tab.label}
@@ -117,7 +120,7 @@ export default async function AdminCustomersPage({
             name="q"
             type="search"
             defaultValue={search ?? ""}
-            placeholder="Search by name, email or business…"
+            placeholder="Search by name, email, phone, business or GSTIN…"
             maxLength={80}
             className="hf-input"
           />
@@ -141,12 +144,12 @@ export default async function AdminCustomersPage({
                     <th scope="col" className="px-4 py-3 font-semibold">Customer</th>
                     <th scope="col" className="px-4 py-3 font-semibold">Business</th>
                     <th scope="col" className="px-4 py-3 font-semibold">Orders</th>
-                    <th scope="col" className="px-4 py-3 font-semibold">Role &amp; access</th>
+                    <th scope="col" className="px-4 py-3 font-semibold">Account</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-cotton-200">
                   {users.map((user) => {
-                    const lifetime = user.orders.reduce((sum, o) => sum + o.total, 0);
+                    const lifetime = user.orders.reduce((sum, o) => sum + o.grandTotal, 0);
                     return (
                       <tr key={user.id} className="transition hover:bg-cotton-50">
                         <td className="px-4 py-3">
@@ -156,22 +159,18 @@ export default async function AdminCustomersPage({
                           >
                             {user.name}
                           </Link>
-                          <p className="text-xs text-slate-400">{user.email}</p>
-                          {user.phone && (
-                            <p className="text-xs text-slate-400">{user.phone}</p>
-                          )}
+                          {user.email && <p className="text-xs text-slate-400">{user.email}</p>}
+                          {user.phone && <p className="text-xs text-slate-400">{formatIndianMobile(user.phone)}</p>}
                           <p className="text-xs text-slate-400">
                             Joined {formatDate(user.createdAt)}
                           </p>
                         </td>
                         <td className="px-4 py-3">
-                          {user.businessName ? (
+                          {user.wholesaleProfile ? (
                             <>
-                              <p className="text-slate-700">{user.businessName}</p>
-                              {user.gstin && (
-                                <p className="font-mono text-xs text-slate-400">
-                                  {user.gstin}
-                                </p>
+                              <p className="text-slate-700">{user.wholesaleProfile.businessName}</p>
+                              {user.wholesaleProfile.gstin && (
+                                <p className="font-mono text-xs text-slate-400">{user.wholesaleProfile.gstin}</p>
                               )}
                             </>
                           ) : (
@@ -190,10 +189,12 @@ export default async function AdminCustomersPage({
                           <CustomerRoleControl
                             userId={user.id}
                             name={user.name}
-                            role={user.role}
-                            isApproved={user.isApproved}
-                            canManageAdmins={admin.role === "SUPERADMIN"}
+                            status={user.status}
+                            wholesaleStatus={user.wholesaleProfile?.status ?? null}
+                            isStaff={user.isStaff}
                             isSelf={user.id === admin.id}
+                            canManage={can(admin, "customers.manage") && (!user.isStaff || admin.isOwner)}
+                            canWholesale={can(admin, "wholesale.manage")}
                           />
                         </td>
                       </tr>

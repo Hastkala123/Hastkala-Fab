@@ -1,73 +1,45 @@
-import { z } from "zod";
 import { db } from "@/lib/db";
 import { fail, guard, handler, ok, parseJson } from "@/lib/api";
 import { RATE_LIMITS } from "@/lib/ratelimit";
-import { cuidSchema } from "@/lib/validators";
+import { reviewModerationSchema } from "@/lib/validators";
 import { audit } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
-/**
- * PATCH — approve or reject a pending review.
- *
- * Approving recomputes the product's cached rating from the approved set, so
- * ratingAvg/ratingCount never drift from the reviews actually on display.
- */
+/** Approve or reject a review, then refresh the product's real average rating. */
 export const PATCH = handler(async (request) => {
-  const gate = await guard({
-    auth: "admin",
-    csrf: true,
-    limit: { bucket: "admin-review", ...RATE_LIMITS.writeApi },
-  });
+  const gate = await guard({ auth: "staff", permission: "reviews.manage", limit: { bucket: "admin-write", ...RATE_LIMITS.adminWrite } });
   if (!gate.ok) return gate.response;
-
-  const admin = gate.ctx.user!;
-
-  const parsed = await parseJson(
-    request,
-    z.object({
-      reviewId: cuidSchema,
-      action: z.enum(["approve", "reject"]),
-    }),
-  );
+  const parsed = await parseJson(request, reviewModerationSchema);
   if (!parsed.ok) return parsed.response;
+  const { reviewId, status, rejectionReason } = parsed.data;
 
-  const review = await db.review.findUnique({
-    where: { id: parsed.data.reviewId },
-    select: { id: true, productId: true },
-  });
+  const review = await db.review.findUnique({ where: { id: reviewId }, select: { id: true, productId: true, status: true } });
   if (!review) return fail("Review not found.", 404);
 
-  if (parsed.data.action === "reject") {
-    await db.review.delete({ where: { id: review.id } });
-  } else {
-    await db.review.update({
+  await db.$transaction(async (tx) => {
+    await tx.review.update({
       where: { id: review.id },
-      data: { isApproved: true },
+      data: { status, rejectionReason: status === "REJECTED" ? rejectionReason : null },
     });
-  }
-
-  const stats = await db.review.aggregate({
-    where: { productId: review.productId, isApproved: true },
-    _avg: { rating: true },
-    _count: { id: true },
-  });
-
-  await db.product.update({
-    where: { id: review.productId },
-    data: {
-      ratingAvg: Math.round((stats._avg.rating ?? 0) * 10) / 10,
-      ratingCount: stats._count.id,
-    },
+    const stats = await tx.review.aggregate({
+      where: { productId: review.productId, status: "APPROVED" },
+      _avg: { rating: true },
+      _count: { _all: true },
+    });
+    await tx.product.update({
+      where: { id: review.productId },
+      data: { ratingAvg: Math.round((stats._avg.rating ?? 0) * 10) / 10, ratingCount: stats._count._all },
+    });
   });
 
   await audit({
-    userId: admin.id,
-    actorEmail: admin.email,
-    action: `review.${parsed.data.action}`,
-    entity: "Review",
+    actor: gate.ctx.user,
+    action: `review.${status.toLowerCase()}`,
+    entityType: "Review",
     entityId: review.id,
+    before: { status: review.status },
+    after: { status, rejectionReason },
   });
-
   return ok({ success: true });
 });

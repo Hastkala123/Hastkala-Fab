@@ -51,25 +51,27 @@ const nextConfig: NextConfig = {
   productionBrowserSourceMaps: false,
   images: {
     formats: ["image/avif", "image/webp"],
-    // Only local uploads are served; no remote patterns = no SSRF via next/image.
+    // Only our own media is optimised; no remote patterns = no SSRF via next/image.
     remotePatterns: [],
+    localPatterns: [{ pathname: "/media/**", search: "" }],
+  },
+  /**
+   * Old URLs (before the October 2026 rebuild) move permanently to the new
+   * ones, so links and search rankings carry over. /category/* is redirected
+   * in its page, because a sub-category's new URL includes its parent.
+   */
+  async redirects() {
+    return [
+      { source: "/product/:slug", destination: "/products/:slug", statusCode: 301 },
+      { source: "/products", destination: "/search", statusCode: 301 },
+      { source: "/order-confirmed/:orderNumber", destination: "/order/:orderNumber/thank-you", statusCode: 301 },
+      { source: "/track-order", destination: "/track", statusCode: 301 },
+      { source: "/help", destination: "/account/support", statusCode: 302 },
+    ];
   },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
-      {
-        // Uploaded files must never be interpreted as HTML/JS by the browser.
-        source: "/uploads/:path*",
-        headers: [
-          { key: "Content-Disposition", value: "inline" },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          {
-            key: "Content-Security-Policy",
-            value: "default-src 'none'; img-src 'self'; sandbox",
-          },
-          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
-        ],
-      },
     ];
   },
 };

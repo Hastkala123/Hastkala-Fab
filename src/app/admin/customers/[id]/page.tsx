@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { can } from "@/lib/auth";
 import { formatPrice } from "@/lib/money";
-import { formatDate, STATUS_LABELS, STATUS_STYLES } from "@/lib/utils";
+import { formatIndianMobile } from "@/lib/phone";
+import { formatDate, ORDER_STATUS_LABELS as STATUS_LABELS, STATUS_STYLES } from "@/lib/utils";
+import { requireStaffPage } from "@/server/auth/page-guard";
+import CustomerRoleControl from "../CustomerRoleControl";
 
 export const metadata: Metadata = { title: "Customer" };
 export const dynamic = "force-dynamic";
@@ -14,7 +17,7 @@ export default async function AdminCustomerPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAdmin();
+  const staff = await requireStaffPage("customers.view");
   const { id } = await params;
 
   const user = await db.user.findUnique({
@@ -24,11 +27,13 @@ export default async function AdminCustomerPage({
       name: true,
       email: true,
       phone: true,
-      role: true,
-      isApproved: true,
-      businessName: true,
-      gstin: true,
+      status: true,
+      isStaff: true,
       createdAt: true,
+      lastLoginAt: true,
+      wholesaleProfile: {
+        select: { businessName: true, gstin: true, city: true, state: true, status: true, rejectionReason: true, createdAt: true },
+      },
       addresses: true,
       orders: {
         orderBy: { placedAt: "desc" },
@@ -37,7 +42,7 @@ export default async function AdminCustomerPage({
           id: true,
           orderNumber: true,
           status: true,
-          total: true,
+          grandTotal: true,
           placedAt: true,
           _count: { select: { items: true } },
         },
@@ -47,10 +52,9 @@ export default async function AdminCustomerPage({
 
   if (!user) notFound();
 
-  const lifetime = user.orders.reduce(
-    (sum, o) => (o.status === "CANCELLED" || o.status === "RETURNED" ? sum : sum + o.total),
-    0,
-  );
+  const NOT_SALES = new Set(["CANCELLED", "PAYMENT_FAILED", "PENDING_PAYMENT"]);
+  const lifetime = user.orders.reduce((sum, o) => (NOT_SALES.has(o.status) ? sum : sum + o.grandTotal), 0);
+  const business = user.wholesaleProfile;
 
   return (
     <div>
@@ -64,20 +68,22 @@ export default async function AdminCustomerPage({
             {user.name}
           </h1>
           <p className="mt-1 text-sm text-slate-600">
-            {user.email} · joined {formatDate(user.createdAt)}
+            {[user.email, user.phone ? formatIndianMobile(user.phone) : null].filter(Boolean).join(" · ")} · joined{" "}
+            {formatDate(user.createdAt)}
+            {user.lastLoginAt && ` · last sign-in ${formatDate(user.lastLoginAt)}`}
           </p>
         </div>
-        <div className="flex gap-1.5">
-          <span className="hf-badge text-indigo-ink-700">{user.role}</span>
-          {user.role === "WHOLESALE" && (
-            <span
-              className={`hf-badge ${
-                user.isApproved ? "text-emerald-700" : "text-turmeric-700"
-              }`}
-            >
-              {user.isApproved ? "Approved" : "Pending"}
-            </span>
-          )}
+        <div className="max-w-xs">
+          <CustomerRoleControl
+            userId={user.id}
+            name={user.name}
+            status={user.status}
+            wholesaleStatus={business?.status ?? null}
+            isStaff={user.isStaff}
+            isSelf={user.id === staff.id}
+            canManage={can(staff, "customers.manage") && (!user.isStaff || staff.isOwner)}
+            canWholesale={can(staff, "wholesale.manage")}
+          />
         </div>
       </div>
 
@@ -87,7 +93,7 @@ export default async function AdminCustomerPage({
         <Stat label="Saved addresses" value={String(user.addresses.length)} />
       </div>
 
-      {user.businessName && (
+      {business && (
         <section className="hf-card mt-6 p-5">
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
             Business details
@@ -95,14 +101,24 @@ export default async function AdminCustomerPage({
           <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-xs text-slate-400">Business name</dt>
-              <dd className="font-medium text-indigo-ink-900">{user.businessName}</dd>
+              <dd className="font-medium text-indigo-ink-900">{business.businessName}</dd>
             </div>
-            {user.gstin && (
-              <div>
-                <dt className="text-xs text-slate-400">GSTIN</dt>
-                <dd className="font-mono font-medium text-indigo-ink-900">
-                  {user.gstin}
-                </dd>
+            <div>
+              <dt className="text-xs text-slate-400">GSTIN</dt>
+              <dd className="font-mono font-medium text-indigo-ink-900">{business.gstin ?? "Not given"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-400">Location</dt>
+              <dd className="font-medium text-indigo-ink-900">{[business.city, business.state].filter(Boolean).join(", ") || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-400">Applied</dt>
+              <dd className="font-medium text-indigo-ink-900">{formatDate(business.createdAt)}</dd>
+            </div>
+            {business.rejectionReason && (
+              <div className="sm:col-span-2">
+                <dt className="text-xs text-slate-400">Reason given</dt>
+                <dd className="text-indigo-ink-900">{business.rejectionReason}</dd>
               </div>
             )}
           </dl>
@@ -138,7 +154,7 @@ export default async function AdminCustomerPage({
                       {STATUS_LABELS[order.status] ?? order.status}
                     </span>
                     <span className="font-semibold text-indigo-ink-950">
-                      {formatPrice(order.total)}
+                      {formatPrice(order.grandTotal)}
                     </span>
                   </div>
                 </Link>
@@ -170,7 +186,13 @@ export default async function AdminCustomerPage({
                   <br />
                   {address.city}, {address.state} {address.pincode}
                   <br />
-                  {address.phone}
+                  {formatIndianMobile(address.phone)}
+                  {address.gstin && (
+                    <>
+                      <br />
+                      GSTIN {address.gstin}
+                    </>
+                  )}
                 </address>
               </li>
             ))}

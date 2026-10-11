@@ -11,11 +11,8 @@ export default function ProfileForm({
 }: {
   initial: {
     name: string;
-    email: string;
+    email: string | null;
     phone: string;
-    role: string;
-    businessName: string;
-    gstin: string;
   };
 }) {
   const router = useRouter();
@@ -38,8 +35,6 @@ export default function ProfileForm({
       body: {
         name: String(form.get("name") ?? ""),
         phone: String(form.get("phone") ?? ""),
-        businessName: String(form.get("businessName") ?? ""),
-        gstin: String(form.get("gstin") ?? ""),
       },
     });
 
@@ -80,7 +75,7 @@ export default function ProfileForm({
           </label>
           <input
             id="email-readonly"
-            value={initial.email}
+            value={initial.email ?? ""}
             readOnly
             disabled
             className="hf-input cursor-not-allowed bg-cotton-100 text-slate-500"
@@ -102,34 +97,6 @@ export default function ProfileForm({
           />
         )}
       </Field>
-
-      {initial.role === "WHOLESALE" && (
-        <div className="grid gap-5 rounded-lg border border-cotton-300 bg-cotton-50 p-4 sm:grid-cols-2">
-          <Field label="Business name" error={fields.businessName}>
-            {(props) => (
-              <input
-                {...props}
-                name="businessName"
-                defaultValue={initial.businessName}
-                maxLength={120}
-                className="hf-input"
-              />
-            )}
-          </Field>
-
-          <Field label="GSTIN" error={fields.gstin}>
-            {(props) => (
-              <input
-                {...props}
-                name="gstin"
-                defaultValue={initial.gstin}
-                maxLength={15}
-                className="hf-input uppercase"
-              />
-            )}
-          </Field>
-        </div>
-      )}
 
       <SubmitButton pending={pending} pendingLabel="Saving…" className="sm:w-auto sm:px-8">
         Save changes

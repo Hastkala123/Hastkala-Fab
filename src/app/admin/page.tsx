@@ -1,84 +1,84 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
 import { formatPrice } from "@/lib/money";
-import { formatDate, STATUS_LABELS, STATUS_STYLES } from "@/lib/utils";
+import { formatDate, ORDER_STATUS_LABELS, STATUS_STYLES } from "@/lib/utils";
+import { istStartOfDay, istDateString } from "@/lib/time";
+import { requireStaffPage } from "@/server/auth/page-guard";
+import { SETTING_KEYS, SETTING_LABELS } from "@/server/settings/schema";
+import { getSettings } from "@/server/settings";
 
 export const metadata: Metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
 
-const LOW_STOCK_THRESHOLD = 5;
+/** Orders that count as sales: placed and not cancelled, failed or unpaid. */
+const SOLD = { notIn: ["CANCELLED", "PAYMENT_FAILED", "PENDING_PAYMENT"] } as const;
 
 export default async function AdminDashboard() {
-  const admin = await requireAdmin();
+  const admin = await requireStaffPage("dashboard.view");
 
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const now = new Date();
+  const startOfToday = istStartOfDay(istDateString(now));
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 86_400_000);
 
   const [
     revenue,
     revenue30,
     todayOrders,
-    pendingOrders,
+    toDispatch,
     productCount,
     activeProducts,
     customerCount,
     pendingWholesale,
     pendingReviews,
     openTickets,
-    lowStock,
+    lowStockRows,
     recentOrders,
     topProducts,
+    settings,
   ] = await Promise.all([
+    db.order.aggregate({ where: { status: { notIn: [...SOLD.notIn] } }, _sum: { grandTotal: true }, _count: { id: true } }),
     db.order.aggregate({
-      where: { status: { notIn: ["CANCELLED", "RETURNED"] } },
-      _sum: { total: true },
-      _count: { id: true },
-    }),
-    db.order.aggregate({
-      where: {
-        status: { notIn: ["CANCELLED", "RETURNED"] },
-        placedAt: { gte: thirtyDaysAgo },
-      },
-      _sum: { total: true },
+      where: { status: { notIn: [...SOLD.notIn] }, placedAt: { gte: thirtyDaysAgo } },
+      _sum: { grandTotal: true },
     }),
     db.order.count({ where: { placedAt: { gte: startOfToday } } }),
-    db.order.count({ where: { status: { in: ["PENDING", "CONFIRMED"] } } }),
-    db.product.count(),
-    db.product.count({ where: { isActive: true } }),
-    db.user.count({ where: { role: { in: ["CUSTOMER", "WHOLESALE"] } } }),
-    db.user.count({ where: { role: "WHOLESALE", isApproved: false } }),
-    db.review.count({ where: { isApproved: false } }),
-    db.helpTicket.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] } } }),
-    db.product.findMany({
-      where: { isActive: true, stock: { lte: LOW_STOCK_THRESHOLD } },
-      orderBy: { stock: "asc" },
-      take: 6,
-      select: { id: true, title: true, slug: true, stock: true, sku: true },
-    }),
+    db.order.count({ where: { status: { in: ["CONFIRMED", "PROCESSING", "PACKED"] } } }),
+    db.product.count({ where: { status: { not: "ARCHIVED" } } }),
+    db.product.count({ where: { status: "ACTIVE" } }),
+    db.user.count({ where: { isStaff: false, status: "ACTIVE" } }),
+    db.wholesaleProfile.count({ where: { status: "PENDING" } }),
+    db.review.count({ where: { status: "PENDING" } }),
+    db.supportTicket.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] } } }),
+    // Each variant has its own low-stock level, set in the product form.
+    db.$queryRaw<{ id: string; productId: string; title: string; label: string | null; stock: number }[]>`
+      SELECT v."id", v."productId", p."title", concat_ws(' · ', v."size", v."colorName") AS label, v."stock"
+        FROM "ProductVariant" v JOIN "Product" p ON p."id" = v."productId"
+       WHERE p."status" = 'ACTIVE' AND v."isActive" AND v."archivedAt" IS NULL AND v."stock" <= v."lowStockThreshold"
+       ORDER BY v."stock" ASC, p."title" ASC
+       LIMIT 8`,
     db.order.findMany({
       orderBy: { placedAt: "desc" },
       take: 8,
-      include: {
-        user: { select: { name: true, email: true } },
-        _count: { select: { items: true } },
-      },
+      include: { user: { select: { name: true, email: true, phone: true } }, _count: { select: { items: true } } },
     }),
-    db.product.findMany({
-      where: { soldCount: { gt: 0 } },
-      orderBy: { soldCount: "desc" },
+    db.orderItem.groupBy({
+      by: ["productId", "title"],
+      where: { productId: { not: null }, order: { status: { notIn: [...SOLD.notIn] }, placedAt: { gte: thirtyDaysAgo } } },
+      _sum: { quantity: true, lineTotal: true },
+      orderBy: { _sum: { quantity: "desc" } },
       take: 5,
-      select: { id: true, title: true, slug: true, soldCount: true, priceRetail: true },
     }),
+    getSettings(),
   ]);
+  const lowStock = lowStockRows;
+  const pendingOrders = toDispatch;
+  const unsavedSettings = SETTING_KEYS.filter((key) => !settings._saved.has(key));
 
   const actionItems = [
     pendingOrders > 0 && {
       label: `${pendingOrders} order${pendingOrders === 1 ? "" : "s"} awaiting dispatch`,
-      href: "/admin/orders?status=PENDING",
+      href: "/admin/orders?status=CONFIRMED",
     },
     pendingWholesale > 0 && {
       label: `${pendingWholesale} wholesale account${pendingWholesale === 1 ? "" : "s"} to verify`,
@@ -93,8 +93,16 @@ export default async function AdminDashboard() {
       href: "/admin/tickets",
     },
     lowStock.length > 0 && {
-      label: `${lowStock.length} product${lowStock.length === 1 ? "" : "s"} low on stock`,
+      label: `${lowStock.length}${lowStock.length === 8 ? "+" : ""} size/colour${lowStock.length === 1 ? "" : "s"} low on stock`,
       href: "/admin/products?filter=low-stock",
+    },
+    unsavedSettings.length > 0 && {
+      label: `Confirm store settings: ${unsavedSettings.map((k) => SETTING_LABELS[k]).join(", ")}`,
+      href: "/admin/settings",
+    },
+    !settings.tax.ratesConfirmedByCa && {
+      label: "GST rates are placeholders until your CA confirms them",
+      href: "/admin/settings#tax",
     },
   ].filter(Boolean) as { label: string; href: string }[];
 
@@ -113,13 +121,13 @@ export default async function AdminDashboard() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
           label="Total revenue"
-          value={formatPrice(revenue._sum.total ?? 0)}
+          value={formatPrice(revenue._sum.grandTotal ?? 0)}
           detail={`${revenue._count.id} orders all-time`}
         />
         <Kpi
           label="Revenue (30 days)"
-          value={formatPrice(revenue30._sum.total ?? 0)}
-          detail="Excludes cancelled & returned"
+          value={formatPrice(revenue30._sum.grandTotal ?? 0)}
+          detail="Paid or confirmed orders"
         />
         <Kpi
           label="Orders today"
@@ -199,15 +207,15 @@ export default async function AdminDashboard() {
                         <p className="font-medium text-indigo-ink-900">
                           {order.user.name}
                         </p>
-                        <p className="text-xs text-slate-400">{order.user.email}</p>
+                        <p className="text-xs text-slate-400">{order.user.email ?? order.user.phone}</p>
                       </td>
                       <td className="px-5 py-3">
                         <span className={`hf-badge ${STATUS_STYLES[order.status] ?? ""}`}>
-                          {STATUS_LABELS[order.status] ?? order.status}
+                          {ORDER_STATUS_LABELS[order.status] ?? order.status}
                         </span>
                       </td>
                       <td className="px-5 py-3 text-right font-semibold text-indigo-ink-950">
-                        {formatPrice(order.total)}
+                        {formatPrice(order.grandTotal)}
                       </td>
                     </tr>
                   ))}
@@ -232,10 +240,11 @@ export default async function AdminDashboard() {
                 {lowStock.map((product) => (
                   <li key={product.id} className="flex items-center justify-between gap-3">
                     <Link
-                      href={`/admin/products/${product.id}`}
+                      href={`/admin/products/${product.productId}`}
                       className="hf-clamp-1 min-w-0 text-sm text-indigo-ink-800 hover:underline"
                     >
                       {product.title}
+                      {product.label ? ` (${product.label})` : ""}
                     </Link>
                     <span
                       className={`shrink-0 rounded px-2 py-0.5 text-xs font-bold ${
@@ -255,26 +264,26 @@ export default async function AdminDashboard() {
           {/* ---- Top sellers ---- */}
           <section className="hf-card p-5">
             <h2 className="font-display text-base font-bold text-indigo-ink-950">
-              Top sellers
+              Top sellers (30 days)
             </h2>
             {topProducts.length === 0 ? (
               <p className="mt-3 text-sm text-slate-500">No sales recorded yet.</p>
             ) : (
               <ol className="mt-3 space-y-2.5">
                 {topProducts.map((product, index) => (
-                  <li key={product.id} className="flex items-start gap-2.5">
+                  <li key={product.productId} className="flex items-start gap-2.5">
                     <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded bg-cotton-200 text-[10px] font-bold text-slate-600">
                       {index + 1}
                     </span>
                     <div className="min-w-0">
                       <Link
-                        href={`/admin/products/${product.id}`}
+                        href={`/admin/products/${product.productId}`}
                         className="hf-clamp-1 text-sm text-indigo-ink-800 hover:underline"
                       >
                         {product.title}
                       </Link>
                       <p className="text-xs text-slate-400">
-                        {product.soldCount} sold · {formatPrice(product.priceRetail)}
+                        {product._sum.quantity ?? 0} sold · {formatPrice(product._sum.lineTotal ?? 0)} in 30 days
                       </p>
                     </div>
                   </li>

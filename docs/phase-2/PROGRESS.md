@@ -4,7 +4,7 @@ Each milestone ends with typecheck + lint + tests + production build passing, th
 
 | # | Milestone | Status |
 |---|---|---|
-| M1 | **Foundation:** PostgreSQL + new schema, GST/pricing/coupon/state-machine engines with tests, settings, seed, existing features ported, new URLs | 🔄 In progress |
+| M1 | **Foundation:** PostgreSQL + new schema, GST/pricing/coupon/state-machine engines with tests, settings, seed, existing features ported, new URLs | ✅ Done (12 Oct 2026) |
 | M2 | Payments: Razorpay (+ dev test gateway), webhooks, payment retry, expiry job, reconciliation | ⏳ |
 | M3 | GST invoices + credit notes (PDF), GSTR-1 export | ⏳ |
 | M4 | Shipping: Shiprocket (+ manual mode), labels, tracking timeline, public `/track`, NDR/RTO | ⏳ |
@@ -21,3 +21,39 @@ Each milestone ends with typecheck + lint + tests + production build passing, th
 - **Every outside service sits behind an interface with a development stand-in:** a test payment gateway, manual shipping, notifications written to the log, files saved to `./storage`. The site is fully usable and testable before any keys exist, and the stand-ins are blocked in production.
 - **Uploaded files are served by a route handler** (`/media/…`) instead of `public/`, so they work after deployment (fixes C5). Cloudinary/S3 plugs in later.
 - **Local development database:** PostgreSQL 16 from Homebrew, kept inside the project in `./.pgdata` on port 5433. Run `npm run db:start` / `npm run db:stop`.
+
+## M1 — what was built
+
+**Shop**
+- New addresses: `/kurtis`, `/kurtis/cotton-kurtis`, `/products/{slug}`, `/search`, `/order/{number}/thank-you`. Old addresses (`/category/…`, `/product/…`, `/products`, `/order-confirmed/…`) redirect permanently, so links and rankings carry over.
+- Search understands synonyms and Hindi words ("chadar" → bedsheets, "sari" → sarees), plurals, and typos ("indgo" → indigo). Synonyms are data (seeded, editable).
+- Filters come from attributes the owner marks "filterable" (fabric, print style, motif, colour, occasion…), plus size, colour, price and in-stock.
+- Product page: size and colour picker on real variants, per-variant price and stock, wholesale price breaks for approved buyers ("+ GST"), size chart, real reviews only, safe structured data.
+- Bag and checkout: prices recomputed on the server every time; coupon box with clear reasons; free-shipping progress; COD offered only when allowed; GST shown as CGST+SGST or IGST by delivery state.
+- Account: dashboard, orders with tracking steps and history, cancel before preparation, addresses (with landmark and GSTIN), wishlist, support tickets (new-ticket form), password change with "sign out other devices".
+
+**Admin**
+- Staff see only the sections their role allows.
+- Products: one editor for details, photos (drag to reorder), sizes/colours with stock (stock history kept), price per size, wholesale price breaks, filter attributes, policies, scheduling, SEO and search words. Products are archived, never deleted. Drag-and-drop order per category ("Recommended").
+- Categories: HSN code, menu visibility, banner, SEO text, drag-and-drop menu order.
+- Coupons: percent / flat / free shipping, dates, audience, first order only, per-category, limits.
+- Orders: status changes checked against the rules and protected against two people editing at once; cancellation puts stock back and releases the coupon; internal notes; full timeline.
+- Customers: block/unblock, approve/reject/suspend wholesale buyers.
+- Reviews moderation (ratings recalculated from approved reviews), support ticket replies and internal notes.
+- **Settings:** business details, shipping, COD, returns, GST options, checkout limits, wholesale rules, SEO defaults — all editable, validated, and audited. The dashboard lists sections still on starting values.
+
+**Safety checks proven by tests (real PostgreSQL)**
+- Two shoppers, one last piece: exactly one order.
+- A coupon limited to 1 use, three shoppers at once: used once.
+- The same checkout submitted twice: one order.
+- One shopper, two tabs: one order.
+- Two cancellations at once: stock restored once.
+- Stale status change: refused. Order numbers: no gaps, no repeats.
+
+Run them with `npm run db:start` then `npm test` (83 tests: 71 unit, 12 integration).
+
+**Known limits until later milestones**
+- Online payment (UPI/card/net banking) records the order as "awaiting payment"; the payment gateway and the automatic release of unpaid stock arrive in **M2**.
+- Tracking numbers are written in the order note until courier integration in **M4**.
+- Newsletter sign-ups stay "pending" until confirmation emails exist (**M6**). COD phone verification arrives with OTP in **M7**.
+- Home page sections, info pages and legal pages are built in **M9/M10**. Some home page wording (history claims) still needs the owner's confirmation.

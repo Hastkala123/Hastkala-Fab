@@ -18,9 +18,17 @@ export type CouponRow = {
   perUserLimit: string;
   usedCount: number;
   isActive: boolean;
-  appliesTo: string;
-  expiresAt: string;
+  audience: string;
+  firstOrderOnly: boolean;
+  /** YYYY-MM-DD (India time); blank = from now / never ends. */
+  startsAt: string;
+  endsAt: string;
+  categoryIds: string[];
 };
+
+export type CategoryChoice = { id: string; name: string };
+
+const AUDIENCE_LABELS: Record<string, string> = { ALL: "Everyone", RETAIL: "Retail only", WHOLESALE: "Wholesale only" };
 
 const blank: Omit<CouponRow, "id" | "usedCount"> = {
   code: "",
@@ -32,11 +40,14 @@ const blank: Omit<CouponRow, "id" | "usedCount"> = {
   usageLimit: "",
   perUserLimit: "1",
   isActive: true,
-  appliesTo: "ALL",
-  expiresAt: "",
+  audience: "ALL",
+  firstOrderOnly: false,
+  startsAt: "",
+  endsAt: "",
+  categoryIds: [],
 };
 
-export default function CouponManager({ coupons }: { coupons: CouponRow[] }) {
+export default function CouponManager({ coupons, categories }: { coupons: CouponRow[]; categories: CategoryChoice[] }) {
   const router = useRouter();
   const { toast } = useToast();
   const [editing, setEditing] = useState<CouponRow | null>(null);
@@ -78,6 +89,7 @@ export default function CouponManager({ coupons }: { coupons: CouponRow[] }) {
           </h2>
           <CouponForm
             initial={editing ?? { ...blank, id: undefined, usedCount: 0 }}
+            categories={categories}
             onDone={() => {
               setCreating(false);
               setEditing(null);
@@ -126,7 +138,9 @@ export default function CouponManager({ coupons }: { coupons: CouponRow[] }) {
                       <p className="font-semibold text-indigo-ink-900">
                         {coupon.type === "PERCENT"
                           ? `${coupon.value}%`
-                          : `₹${coupon.value}`}
+                          : coupon.type === "FLAT"
+                            ? `₹${coupon.value}`
+                            : "Free shipping"}
                       </p>
                       {coupon.maxDiscount && coupon.type === "PERCENT" && (
                         <p className="text-xs text-slate-400">
@@ -137,8 +151,14 @@ export default function CouponManager({ coupons }: { coupons: CouponRow[] }) {
                     <td className="px-4 py-3 text-xs text-slate-500">
                       <p>Min order ₹{coupon.minOrderValue}</p>
                       <p>{coupon.perUserLimit} per customer</p>
-                      <p>{coupon.appliesTo}</p>
-                      {coupon.expiresAt && <p>Expires {coupon.expiresAt}</p>}
+                      <p>{AUDIENCE_LABELS[coupon.audience] ?? coupon.audience}{coupon.firstOrderOnly ? " · first order" : ""}</p>
+                      {coupon.categoryIds.length > 0 && (
+                        <p>
+                          {coupon.categoryIds.map((id) => categories.find((c) => c.id === id)?.name ?? "?").join(", ")}
+                        </p>
+                      )}
+                      {coupon.startsAt && <p>From {coupon.startsAt}</p>}
+                      {coupon.endsAt && <p>Until {coupon.endsAt}</p>}
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-semibold text-indigo-ink-900">
@@ -193,10 +213,12 @@ export default function CouponManager({ coupons }: { coupons: CouponRow[] }) {
 
 function CouponForm({
   initial,
+  categories,
   onDone,
   onCancel,
 }: {
   initial: Partial<CouponRow> & { id?: string };
+  categories: CategoryChoice[];
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -217,31 +239,36 @@ function CouponForm({
     setFormError(null);
     setFields({});
 
-    const body: Record<string, unknown> = {
+    // Dates are whole days in India time: from the start of the first day to the end of the last.
+    const data = {
       code: values.code,
       description: values.description,
       type: values.type,
-      value: values.value,
-      minOrderValue: values.minOrderValue,
+      value: values.type === "FREE_SHIPPING" ? "0" : values.value,
+      minOrderValue: values.minOrderValue || "0",
+      maxDiscount: values.type === "PERCENT" ? values.maxDiscount : "",
+      usageLimit: values.usageLimit,
       perUserLimit: values.perUserLimit,
       isActive: values.isActive,
-      appliesTo: values.appliesTo,
-      expiresAt: values.expiresAt,
-      ...(values.maxDiscount ? { maxDiscount: values.maxDiscount } : {}),
-      ...(values.usageLimit ? { usageLimit: values.usageLimit } : {}),
+      audience: values.audience,
+      firstOrderOnly: values.firstOrderOnly,
+      startsAt: values.startsAt ? `${values.startsAt}T00:00:00+05:30` : "",
+      endsAt: values.endsAt ? `${values.endsAt}T23:59:59+05:30` : "",
+      categoryIds: values.categoryIds,
     };
-    if (editing) body.id = initial.id;
 
     const result = await apiRequest("/api/admin/coupons", {
       method: editing ? "PATCH" : "POST",
-      body,
+      body: editing ? { id: initial.id, data } : data,
     });
 
     setPending(false);
 
     if (!result.ok) {
       setFormError(result.error);
-      if (result.fields) setFields(result.fields);
+      if (result.fields) {
+        setFields(Object.fromEntries(Object.entries(result.fields).map(([k, v]) => [k.replace(/^data\./, ""), v])));
+      }
       return;
     }
 
@@ -299,6 +326,7 @@ function CouponForm({
             >
               <option value="PERCENT">Percentage off</option>
               <option value="FLAT">Flat amount off</option>
+              <option value="FREE_SHIPPING">Free shipping</option>
             </select>
           )}
         </Field>
@@ -317,6 +345,7 @@ function CouponForm({
               step={values.type === "PERCENT" ? 1 : 0.01}
               value={values.value}
               onChange={(e) => setValues((v) => ({ ...v, value: e.target.value }))}
+              disabled={values.type === "FREE_SHIPPING"}
               required
               className="hf-input"
             />
@@ -336,7 +365,7 @@ function CouponForm({
               step="0.01"
               value={values.maxDiscount}
               onChange={(e) => setValues((v) => ({ ...v, maxDiscount: e.target.value }))}
-              disabled={values.type === "FLAT"}
+              disabled={values.type !== "PERCENT"}
               placeholder="500"
               className="hf-input disabled:bg-cotton-100"
             />
@@ -386,26 +415,68 @@ function CouponForm({
           )}
         </Field>
 
-        <Field label="Expires on" error={fields.expiresAt} hint="Blank = never">
-          {(props) => (
-            <input
-              {...props}
-              type="date"
-              value={values.expiresAt}
-              onChange={(e) => setValues((v) => ({ ...v, expiresAt: e.target.value }))}
-              className="hf-input"
-            />
-          )}
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Starts on" error={fields.startsAt} hint="Blank = now">
+            {(props) => (
+              <input
+                {...props}
+                type="date"
+                value={values.startsAt}
+                onChange={(e) => setValues((v) => ({ ...v, startsAt: e.target.value }))}
+                className="hf-input"
+              />
+            )}
+          </Field>
+          <Field label="Last day" error={fields.endsAt} hint="Blank = no end">
+            {(props) => (
+              <input
+                {...props}
+                type="date"
+                value={values.endsAt}
+                onChange={(e) => setValues((v) => ({ ...v, endsAt: e.target.value }))}
+                className="hf-input"
+              />
+            )}
+          </Field>
+        </div>
       </div>
 
+      {categories.length > 0 && (
+        <fieldset>
+          <legend className="hf-label">Only for these categories (none ticked = whole shop)</legend>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {categories.map((c) => {
+              const on = values.categoryIds.includes(c.id);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() =>
+                    setValues((v) => ({
+                      ...v,
+                      categoryIds: on ? v.categoryIds.filter((id) => id !== c.id) : [...v.categoryIds, c.id],
+                    }))
+                  }
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                    on ? "border-indigo-ink-800 bg-indigo-ink-800 text-white" : "border-cotton-300 text-slate-700"
+                  }`}
+                >
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Applies to" error={fields.appliesTo}>
+        <Field label="Who can use it" error={fields.audience}>
           {(props) => (
             <select
               {...props}
-              value={values.appliesTo}
-              onChange={(e) => setValues((v) => ({ ...v, appliesTo: e.target.value }))}
+              value={values.audience}
+              onChange={(e) => setValues((v) => ({ ...v, audience: e.target.value }))}
               className="hf-input"
             >
               <option value="ALL">All customers</option>
@@ -415,7 +486,16 @@ function CouponForm({
           )}
         </Field>
 
-        <div className="flex items-end pb-2">
+        <div className="flex flex-col justify-end gap-2 pb-2">
+          <label className="flex items-center gap-2.5 text-sm">
+            <input
+              type="checkbox"
+              checked={values.firstOrderOnly}
+              onChange={(e) => setValues((v) => ({ ...v, firstOrderOnly: e.target.checked }))}
+              className="h-4 w-4 rounded border-cotton-400 accent-indigo-ink-800"
+            />
+            <span className="font-medium text-indigo-ink-900">First order only</span>
+          </label>
           <label className="flex items-center gap-2.5 text-sm">
             <input
               type="checkbox"

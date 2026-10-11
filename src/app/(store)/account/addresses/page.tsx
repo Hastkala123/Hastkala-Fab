@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUserPage } from "@/server/auth/page-guard";
 import AddressBook from "./AddressBook";
 
 export const metadata: Metadata = {
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AddressesPage() {
-  const user = await requireUser();
+  const user = await requireUserPage();
 
   const addresses = await db.address.findMany({
     where: { userId: user.id },
@@ -34,10 +34,12 @@ export default async function AddressesPage() {
           phone: a.phone,
           line1: a.line1,
           line2: a.line2,
+          landmark: a.landmark,
           city: a.city,
           state: a.state,
           pincode: a.pincode,
-          type: a.type,
+          gstin: a.gstin,
+          label: a.label,
           isDefault: a.isDefault,
         }))}
       />

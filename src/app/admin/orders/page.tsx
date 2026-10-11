@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
 import { formatPrice } from "@/lib/money";
-import { formatDate, ORDER_STATUSES, STATUS_LABELS, STATUS_STYLES } from "@/lib/utils";
+import { formatDate, ORDER_STATUS_LABELS as STATUS_LABELS, PAYMENT_METHOD_LABELS, STATUS_STYLES } from "@/lib/utils";
+import { ORDER_STATUS_VALUES as ORDER_STATUSES } from "@/lib/validators";
+import { requireStaffPage } from "@/server/auth/page-guard";
 
 export const metadata: Metadata = { title: "Orders" };
 export const dynamic = "force-dynamic";
@@ -16,21 +17,22 @@ export default async function AdminOrdersPage({
 }: {
   searchParams: Promise<{ status?: string; q?: string; page?: string }>;
 }) {
-  await requireAdmin();
+  await requireStaffPage("orders.view");
   const params = await searchParams;
 
   const page = Math.max(1, Number(params.page) || 1);
   const search = params.q?.trim().slice(0, 60);
 
   const where: Prisma.OrderWhereInput = {};
-  if (params.status && ORDER_STATUSES.includes(params.status as never)) {
-    where.status = params.status;
-  }
+  const status = ORDER_STATUSES.find((s) => s === params.status);
+  if (status) where.status = status;
   if (search) {
+    const digits = search.replace(/\D/g, "");
     where.OR = [
-      { orderNumber: { contains: search } },
-      { user: { email: { contains: search } } },
-      { user: { name: { contains: search } } },
+      { orderNumber: { contains: search.toUpperCase() } },
+      { user: { email: { contains: search, mode: "insensitive" } } },
+      { user: { name: { contains: search, mode: "insensitive" } } },
+      ...(digits.length >= 6 ? [{ contactPhone: { contains: digits.slice(-10) } }] : []),
     ];
   }
 
@@ -41,7 +43,7 @@ export default async function AdminOrdersPage({
       skip: (page - 1) * PER_PAGE,
       take: PER_PAGE,
       include: {
-        user: { select: { name: true, email: true } },
+        user: { select: { name: true, email: true, phone: true } },
         _count: { select: { items: true } },
       },
     }),
@@ -70,7 +72,7 @@ export default async function AdminOrdersPage({
       </h1>
       <p className="mt-1 text-sm text-slate-600">
         {total} {total === 1 ? "order" : "orders"}
-        {params.status && ` with status ${params.status.toLowerCase()}`}
+        {status && ` · ${STATUS_LABELS[status]}`}
       </p>
 
       {/* Status tabs */}
@@ -154,7 +156,7 @@ export default async function AdminOrdersPage({
                         </p>
                         <p className="text-xs text-slate-400">
                           {formatDate(order.placedAt)} · {order._count.items} items
-                          {order.orderType === "WHOLESALE" && (
+                          {order.customerType === "WHOLESALE" && (
                             <span className="ml-1.5 rounded bg-madder-100 px-1 text-[10px] font-bold text-madder-700">
                               WHOLESALE
                             </span>
@@ -163,10 +165,10 @@ export default async function AdminOrdersPage({
                       </td>
                       <td className="px-4 py-3">
                         <p className="font-medium text-indigo-ink-900">{order.user.name}</p>
-                        <p className="text-xs text-slate-400">{order.user.email}</p>
+                        <p className="text-xs text-slate-400">{order.user.email ?? order.user.phone}</p>
                       </td>
                       <td className="px-4 py-3">
-                        <p className="text-slate-700">{order.paymentMethod}</p>
+                        <p className="text-slate-700">{PAYMENT_METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod}</p>
                         <p
                           className={`text-xs font-semibold ${
                             order.paymentStatus === "PAID"
@@ -185,7 +187,7 @@ export default async function AdminOrdersPage({
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-indigo-ink-950">
-                        {formatPrice(order.total)}
+                        {formatPrice(order.grandTotal)}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <Link

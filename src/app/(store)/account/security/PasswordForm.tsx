@@ -43,6 +43,7 @@ export default function PasswordForm() {
         currentPassword: String(data.get("currentPassword") ?? ""),
         newPassword: String(data.get("newPassword") ?? ""),
         confirmPassword: String(data.get("confirmPassword") ?? ""),
+        signOutOthers: data.get("signOutOthers") === "on",
       },
     });
 
@@ -124,6 +125,16 @@ export default function PasswordForm() {
           />
         )}
       </Field>
+
+      <label className="flex items-center gap-2.5 text-sm text-slate-600">
+        <input
+          name="signOutOthers"
+          type="checkbox"
+          defaultChecked
+          className="h-4 w-4 rounded border-cotton-400 accent-indigo-ink-800"
+        />
+        Sign out of all other devices
+      </label>
 
       <SubmitButton
         pending={pending}

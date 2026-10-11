@@ -3,42 +3,52 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
-import { formatPrice } from "@/lib/money";
-import { formatDateTime, STATUS_LABELS, STATUS_STYLES } from "@/lib/utils";
+import { can } from "@/lib/auth";
+import { formatPrice, formatRate } from "@/lib/money";
+import { formatIndianMobile } from "@/lib/phone";
+import { GST_STATE_CODES } from "@/lib/gstin";
+import {
+  formatDateTime,
+  ORDER_STATUS_LABELS,
+  PAYMENT_METHOD_LABELS,
+  PAYMENT_STATUS_LABELS,
+  STATUS_STYLES,
+} from "@/lib/utils";
+import { requireStaffPage } from "@/server/auth/page-guard";
+import { canTransitionOrder, ORDER_TRANSITIONS } from "@/server/orders/transitions";
+import AddressBlock from "@/components/orders/AddressBlock";
+import OrderTotals from "@/components/orders/OrderTotals";
 import OrderStatusPanel from "./OrderStatusPanel";
 
 export const metadata: Metadata = { title: "Order Details" };
 export const dynamic = "force-dynamic";
 
-export default async function AdminOrderPage({
-  params,
-}: {
-  params: Promise<{ orderNumber: string }>;
-}) {
-  await requireAdmin();
+const SHIPPING_STATUSES = new Set(["SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED", "RTO_IN_TRANSIT", "RTO_DELIVERED"]);
+
+export default async function AdminOrderPage({ params }: { params: Promise<{ orderNumber: string }> }) {
+  const staff = await requireStaffPage("orders.view");
   const { orderNumber } = await params;
 
   const order = await db.order.findUnique({
     where: { orderNumber },
     include: {
-      user: { select: { id: true, name: true, email: true, phone: true, role: true } },
+      user: { select: { id: true, name: true, email: true, phone: true, customerType: true } },
       items: true,
-      events: { orderBy: { createdAt: "desc" } },
+      statusHistory: { orderBy: { createdAt: "desc" } },
+      couponRedemption: { select: { releasedAt: true } },
     },
   });
-
   if (!order) notFound();
 
-  const shipping = JSON.parse(order.shippingSnapshot) as {
-    fullName: string;
-    line1: string;
-    line2: string | null;
-    city: string;
-    state: string;
-    pincode: string;
-    phone: string;
-  };
+  const actorIds = [...new Set(order.statusHistory.map((h) => h.actorId).filter((id): id is string => Boolean(id)))];
+  const actors = await db.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } });
+  const actorName = (id: string | null) => actors.find((a) => a.id === id)?.name ?? null;
+
+  // Moves this staff member may make from here (the server checks again).
+  const allowed = Object.values(ORDER_TRANSITIONS[order.status])
+    .map((rule) => rule.to)
+    .filter((to) => canTransitionOrder(order.status, to, "STAFF"))
+    .filter((to) => can(staff, "orders.manage") || (SHIPPING_STATUSES.has(to) && can(staff, "shipping.manage")));
 
   return (
     <div>
@@ -48,16 +58,15 @@ export default async function AdminOrderPage({
 
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-indigo-ink-950">
-            {order.orderNumber}
-          </h1>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-indigo-ink-950">{order.orderNumber}</h1>
           <p className="mt-1 text-sm text-slate-600">
             Placed {formatDateTime(order.placedAt)}
-            {order.orderType === "WHOLESALE" && " · wholesale order"}
+            {order.customerType === "WHOLESALE" && " · wholesale order"}
+            {order.channel !== "WEB" && ` · ${order.channel.toLowerCase()} order`}
           </p>
         </div>
         <span className={`hf-badge ${STATUS_STYLES[order.status] ?? ""}`}>
-          {STATUS_LABELS[order.status] ?? order.status}
+          {ORDER_STATUS_LABELS[order.status] ?? order.status}
         </span>
       </div>
 
@@ -71,106 +80,78 @@ export default async function AdminOrderPage({
               {order.items.map((item) => (
                 <li key={item.id} className="flex gap-4 p-4">
                   <div className="relative aspect-[3/4] w-14 shrink-0 overflow-hidden rounded bg-cotton-100">
-                    {item.imageSnapshot ? (
-                      <Image
-                        src={item.imageSnapshot}
-                        alt=""
-                        fill
-                        sizes="56px"
-                        className="object-cover"
-                      />
+                    {item.imageUrl ? (
+                      <Image src={item.imageUrl} alt="" fill sizes="56px" className="object-cover" />
                     ) : (
                       <div className="h-full w-full bg-cotton-200" />
                     )}
                   </div>
                   <div className="min-w-0 flex-1 text-sm">
                     {item.productId ? (
-                      <Link
-                        href={`/admin/products/${item.productId}`}
-                        className="font-medium text-indigo-ink-900 hover:underline"
-                      >
-                        {item.titleSnapshot}
+                      <Link href={`/admin/products/${item.productId}`} className="font-medium text-indigo-ink-900 hover:underline">
+                        {item.title}
                       </Link>
                     ) : (
                       <p className="font-medium text-indigo-ink-900">
-                        {item.titleSnapshot}{" "}
-                        <span className="text-xs text-slate-400">(deleted)</span>
+                        {item.title} <span className="text-xs text-slate-400">(product removed)</span>
                       </p>
                     )}
-                    {item.variantLabel && (
-                      <p className="text-xs text-slate-500">{item.variantLabel}</p>
-                    )}
+                    {item.variantLabel && <p className="text-xs text-slate-500">{item.variantLabel}</p>}
                     <p className="text-xs text-slate-400">
-                      SKU {item.skuSnapshot} · Qty {item.quantity}
+                      SKU {item.sku} · HSN {item.hsnCode || "—"} · GST {formatRate(item.taxRateBps)} · Qty {item.quantity}
+                      {item.quantityCancelled > 0 && ` · ${item.quantityCancelled} cancelled`}
                     </p>
                   </div>
                   <div className="text-right text-sm">
-                    <p className="font-semibold text-indigo-ink-950">
-                      {formatPrice(item.lineTotal)}
-                    </p>
+                    <p className="font-semibold text-indigo-ink-950">{formatPrice(item.lineTotal)}</p>
                     <p className="text-xs text-slate-400">
-                      {formatPrice(item.unitPrice)} each
+                      {formatPrice(item.unitPrice)}
+                      {order.pricesIncludeTax ? "" : " + GST"} each
                     </p>
+                    {item.discountAllocated > 0 && (
+                      <p className="text-xs text-emerald-700">− {formatPrice(item.discountAllocated)} discount</p>
+                    )}
                   </div>
                 </li>
               ))}
             </ul>
-
-            <dl className="space-y-2 border-t border-cotton-300 bg-cotton-50 px-5 py-4 text-sm">
-              <Row label="Subtotal" value={formatPrice(order.subtotal)} />
-              {order.discount > 0 && (
-                <Row
-                  label={`Discount${order.couponCode ? ` (${order.couponCode})` : ""}`}
-                  value={`− ${formatPrice(order.discount)}`}
-                />
-              )}
-              <Row
-                label="Shipping"
-                value={order.shippingFee === 0 ? "Free" : formatPrice(order.shippingFee)}
-              />
-              <Row label="GST" value={formatPrice(order.tax)} />
-              <div className="flex justify-between border-t border-cotton-300 pt-2.5 font-display text-base font-bold text-indigo-ink-950">
-                <dt>Total</dt>
-                <dd>{formatPrice(order.total)}</dd>
-              </div>
-            </dl>
+            <div className="border-t border-cotton-300 bg-cotton-50 px-5 py-4">
+              <OrderTotals order={order} />
+              <p className="mt-2 text-xs text-slate-500">
+                Taxable value {formatPrice(order.taxableValue)} ·{" "}
+                {order.taxType === "INTRA_STATE" ? "CGST + SGST" : "IGST"} · place of supply{" "}
+                {GST_STATE_CODES[order.placeOfSupplyStateCode] ?? order.placeOfSupplyStateCode}
+              </p>
+            </div>
           </section>
 
-          {order.customerNote && (
+          {(order.customerNote || order.giftMessage) && (
             <section className="hf-card p-5">
-              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-                Customer note
-              </h2>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
-                {order.customerNote}
-              </p>
+              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">From the customer</h2>
+              {order.customerNote && <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{order.customerNote}</p>}
+              {order.giftMessage && <p className="mt-2 text-sm text-slate-700">Gift message: {order.giftMessage}</p>}
             </section>
           )}
 
           <section className="hf-card p-5">
-            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-              Order history
-            </h2>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Timeline</h2>
             <ol className="mt-4 space-y-3">
-              {order.events.map((event) => (
+              {order.statusHistory.map((event) => (
                 <li key={event.id} className="flex gap-3 text-sm">
                   <span
                     aria-hidden="true"
-                    className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-indigo-ink-600"
+                    className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${event.isCustomerVisible ? "bg-indigo-ink-600" : "bg-turmeric-500"}`}
                   />
                   <div>
                     <p className="font-medium text-indigo-ink-900">
-                      {STATUS_LABELS[event.status] ?? event.status}
+                      {event.fromStatus === event.toStatus ? "Note" : (ORDER_STATUS_LABELS[event.toStatus] ?? event.toStatus)}
+                      {!event.isCustomerVisible && <span className="ml-2 text-xs font-normal text-turmeric-700">staff only</span>}
                     </p>
-                    {event.note && (
-                      <p className="text-xs text-slate-500">{event.note}</p>
-                    )}
-                    <time
-                      dateTime={event.createdAt.toISOString()}
-                      className="text-xs text-slate-400"
-                    >
-                      {formatDateTime(event.createdAt)}
-                    </time>
+                    {event.note && <p className="text-xs text-slate-600">{event.note}</p>}
+                    <p className="text-xs text-slate-400">
+                      {formatDateTime(event.createdAt)} · {event.actorType.toLowerCase()}
+                      {actorName(event.actorId) ? ` (${actorName(event.actorId)})` : ""}
+                    </p>
                   </div>
                 </li>
               ))}
@@ -182,84 +163,53 @@ export default async function AdminOrderPage({
           <OrderStatusPanel
             orderId={order.id}
             currentStatus={order.status}
-            trackingNumber={order.trackingNumber ?? ""}
-            courierName={order.courierName ?? ""}
+            allowed={allowed}
+            canNote={can(staff, "orders.view")}
           />
 
           <section className="hf-card p-5">
-            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-              Customer
-            </h2>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Customer</h2>
             <div className="mt-3 text-sm">
               <p className="font-semibold text-indigo-ink-900">{order.user.name}</p>
-              <p className="text-slate-600">{order.user.email}</p>
-              {order.user.phone && <p className="text-slate-600">{order.user.phone}</p>}
-              <span className="hf-badge mt-2 text-slate-600">{order.user.role}</span>
+              {order.contactEmail && <p className="text-slate-600">{order.contactEmail}</p>}
+              <p className="text-slate-600">{formatIndianMobile(order.contactPhone)}</p>
+              {order.buyerBusinessName && <p className="mt-1 text-slate-600">{order.buyerBusinessName}</p>}
+              {order.buyerGstin && <p className="font-mono text-xs text-slate-500">GSTIN {order.buyerGstin}</p>}
             </div>
-            <Link
-              href={`/admin/customers/${order.user.id}`}
-              className="hf-link mt-3 inline-block text-sm font-semibold"
-            >
-              View customer →
-            </Link>
+            {can(staff, "customers.view") && (
+              <Link href={`/admin/customers/${order.user.id}`} className="hf-link mt-3 inline-block text-sm font-semibold">
+                View customer →
+              </Link>
+            )}
           </section>
 
           <section className="hf-card p-5">
-            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-              Shipping address
-            </h2>
-            <address className="mt-3 text-sm not-italic leading-relaxed text-slate-700">
-              <strong className="text-indigo-ink-900">{shipping.fullName}</strong>
-              <br />
-              {shipping.line1}
-              {shipping.line2 && (
-                <>
-                  <br />
-                  {shipping.line2}
-                </>
-              )}
-              <br />
-              {shipping.city}, {shipping.state} {shipping.pincode}
-              <br />
-              Phone: {shipping.phone}
-            </address>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Deliver to</h2>
+            <div className="mt-2 text-sm leading-relaxed">
+              <AddressBlock value={order.shippingAddress} />
+            </div>
           </section>
 
           <section className="hf-card p-5">
-            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-              Payment
-            </h2>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Payment</h2>
             <div className="mt-3 text-sm">
-              <p className="font-medium text-indigo-ink-900">{order.paymentMethod}</p>
-              <p
-                className={`font-semibold ${
-                  order.paymentStatus === "PAID"
-                    ? "text-emerald-700"
-                    : order.paymentStatus === "FAILED"
-                      ? "text-madder-600"
-                      : "text-slate-500"
-                }`}
-              >
-                {order.paymentStatus}
+              <p className="font-medium text-indigo-ink-900">{PAYMENT_METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod}</p>
+              <p className={`font-semibold ${order.paymentStatus === "PAID" ? "text-emerald-700" : order.paymentStatus === "FAILED" ? "text-madder-600" : "text-slate-500"}`}>
+                {PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus}
               </p>
-              {order.paymentRef && (
-                <p className="mt-1 font-mono text-xs text-slate-400">
-                  {order.paymentRef}
+              {order.paymentDueBy && order.status === "PENDING_PAYMENT" && (
+                <p className="mt-1 text-xs text-slate-500">Payment window ends {formatDateTime(order.paymentDueBy)}</p>
+              )}
+              {order.couponCode && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Coupon {order.couponCode}
+                  {order.couponRedemption?.releasedAt ? " (released on cancellation)" : ""}
                 </p>
               )}
             </div>
           </section>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-3">
-      <dt className="text-slate-600">{label}</dt>
-      <dd className="font-medium text-indigo-ink-900">{value}</dd>
     </div>
   );
 }

@@ -20,7 +20,7 @@ export default function ReviewModeration({
     setPending(true);
     const result = await apiRequest("/api/admin/reviews", {
       method: "PATCH",
-      body: { reviewId, action },
+      body: { reviewId, status: action === "approve" ? "APPROVED" : "REJECTED" },
     });
     setPending(false);
 
@@ -29,7 +29,7 @@ export default function ReviewModeration({
       return;
     }
 
-    toast(action === "approve" ? "Review published" : "Review removed", "success");
+    toast(action === "approve" ? "Review published" : "Review hidden", "success");
     router.refresh();
   }
 
@@ -51,7 +51,7 @@ export default function ReviewModeration({
         disabled={pending}
         className="rounded px-2.5 py-1 text-xs font-semibold text-madder-600 transition hover:bg-madder-50 disabled:opacity-50"
       >
-        {isApproved ? "Unpublish & delete" : "Reject"}
+        {isApproved ? "Unpublish" : "Reject"}
       </button>
     </div>
   );

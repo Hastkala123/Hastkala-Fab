@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUserPage } from "@/server/auth/page-guard";
 import { formatDateTime } from "@/lib/utils";
 import PasswordForm from "./PasswordForm";
 
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function SecurityPage() {
-  const user = await requireUser();
+  const user = await requireUserPage();
 
   const sessions = await db.session.findMany({
     where: { userId: user.id, revokedAt: null, expiresAt: { gt: new Date() } },

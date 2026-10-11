@@ -1,107 +1,76 @@
 import { db } from "@/lib/db";
 import { fail, guard, handler, ok, parseJson } from "@/lib/api";
-import { isAdminRole } from "@/lib/auth";
 import { RATE_LIMITS } from "@/lib/ratelimit";
 import { ticketReplySchema, ticketSchema } from "@/lib/validators";
-import { generateTicketNumber } from "@/lib/utils";
+import { formatTicketNumber } from "@/server/numbering/format";
+import { nextSequence } from "@/server/numbering/sequence";
 
 export const runtime = "nodejs";
 
-/** POST — open a new support ticket. */
+/** Open a support ticket. */
 export const POST = handler(async (request) => {
-  const gate = await guard({
-    auth: "user",
-    csrf: true,
-    limit: { bucket: "ticket", ...RATE_LIMITS.ticket },
-  });
+  const gate = await guard({ auth: "user", limit: { bucket: "ticket", ...RATE_LIMITS.ticket } });
   if (!gate.ok) return gate.response;
-
   const user = gate.ctx.user!;
 
   const parsed = await parseJson(request, ticketSchema);
   if (!parsed.ok) return parsed.response;
-
   const { subject, category, orderNumber, message } = parsed.data;
 
-  // If the customer referenced an order, confirm it is actually theirs before
-  // attaching it — otherwise the ticket could be used to probe order numbers.
-  let verifiedOrderNumber: string | null = null;
+  // Only the shopper's own orders can be attached, so tickets can't probe order numbers.
+  let orderId: string | null = null;
   if (orderNumber) {
     const order = await db.order.findFirst({
-      where: { orderNumber, userId: user.id },
-      select: { orderNumber: true },
+      where: { orderNumber: orderNumber.toUpperCase(), userId: user.id },
+      select: { id: true },
     });
     if (!order) {
       return fail("Please correct the highlighted fields", 422, {
-        orderNumber: "We could not find that order number on your account.",
+        orderNumber: "We couldn't find that order number on your account.",
       });
     }
-    verifiedOrderNumber = order.orderNumber;
+    orderId = order.id;
   }
 
-  const ticket = await db.helpTicket.create({
-    data: {
-      ticketNumber: generateTicketNumber(),
-      userId: user.id,
-      subject,
-      category,
-      orderNumber: verifiedOrderNumber,
-      priority: category === "PAYMENT" ? "HIGH" : "NORMAL",
-      messages: {
-        create: {
-          authorRole: "CUSTOMER",
-          authorName: user.name,
-          body: message,
-        },
+  const ticket = await db.$transaction(async (tx) =>
+    tx.supportTicket.create({
+      data: {
+        ticketNumber: formatTicketNumber(await nextSequence(tx, "ticket")),
+        userId: user.id,
+        orderId,
+        subject,
+        category,
+        priority: category === "PAYMENT" ? "HIGH" : "NORMAL",
+        messages: { create: { authorType: "CUSTOMER", authorId: user.id, authorName: user.name, body: message } },
       },
-    },
-    select: { id: true, ticketNumber: true },
-  });
+      select: { ticketNumber: true },
+    }),
+  );
 
   return ok({ ticket }, 201);
 });
 
-/** PATCH — append a reply to an existing ticket. */
+/** The shopper replies on their own ticket. Staff reply from admin. */
 export const PATCH = handler(async (request) => {
-  const gate = await guard({
-    auth: "user",
-    csrf: true,
-    limit: { bucket: "ticket-reply", ...RATE_LIMITS.writeApi },
-  });
+  const gate = await guard({ auth: "user", limit: { bucket: "ticket-reply", ...RATE_LIMITS.writeApi } });
   if (!gate.ok) return gate.response;
-
   const user = gate.ctx.user!;
-  const admin = isAdminRole(user.role);
 
-  const parsed = await parseJson(request, ticketReplySchema);
+  const parsed = await parseJson(request, ticketReplySchema.pick({ ticketId: true, body: true }));
   if (!parsed.ok) return parsed.response;
 
-  // Admins may reply to any ticket; customers only to their own.
-  const ticket = await db.helpTicket.findFirst({
-    where: admin
-      ? { id: parsed.data.ticketId }
-      : { id: parsed.data.ticketId, userId: user.id },
+  const ticket = await db.supportTicket.findFirst({
+    where: { id: parsed.data.ticketId, userId: user.id },
     select: { id: true, status: true },
   });
   if (!ticket) return fail("Ticket not found.", 404);
-
-  if (ticket.status === "CLOSED") {
-    return fail("This ticket is closed. Please open a new one.", 409);
-  }
+  if (ticket.status === "CLOSED") return fail("This ticket is closed. Please open a new one.", 409);
 
   await db.$transaction([
     db.ticketMessage.create({
-      data: {
-        ticketId: ticket.id,
-        authorRole: admin ? "ADMIN" : "CUSTOMER",
-        authorName: admin ? "Hastkala Fab Support" : user.name,
-        body: parsed.data.body,
-      },
+      data: { ticketId: ticket.id, authorType: "CUSTOMER", authorId: user.id, authorName: user.name, body: parsed.data.body },
     }),
-    db.helpTicket.update({
-      where: { id: ticket.id },
-      data: { status: admin ? "IN_PROGRESS" : "OPEN" },
-    }),
+    db.supportTicket.update({ where: { id: ticket.id }, data: { status: "OPEN", closedAt: null } }),
   ]);
 
   return ok({ success: true }, 201);

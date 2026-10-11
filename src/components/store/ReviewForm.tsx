@@ -35,7 +35,7 @@ export default function ReviewForm({ productId }: { productId: string }) {
         productId,
         rating,
         title: String(form.get("title") ?? ""),
-        comment: String(form.get("comment") ?? ""),
+        body: String(form.get("body") ?? ""),
       },
     });
 
@@ -105,11 +105,11 @@ export default function ReviewForm({ productId }: { productId: string }) {
         )}
       </Field>
 
-      <Field label="Your review" error={fields.comment} required>
+      <Field label="Your review" error={fields.body} required>
         {(props) => (
           <textarea
             {...props}
-            name="comment"
+            name="body"
             rows={4}
             required
             minLength={10}

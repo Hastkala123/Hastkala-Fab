@@ -14,30 +14,39 @@ export type CategoryRow = {
   name: string;
   slug: string;
   description: string;
+  bottomContent: string;
   imageUrl: string;
+  bannerImageUrl: string;
   parentId: string;
   parentName: string | null;
-  position: number;
+  parentSlug: string | null;
+  hsnCodeId: string;
   isActive: boolean;
+  showInMenu: boolean;
   metaTitle: string;
   metaDescription: string;
   productCount: number;
   childCount: number;
 };
 
-const blank = (): Omit<CategoryRow, "productCount" | "childCount" | "parentName" | "id"> => ({
+export type HsnChoice = { id: string; code: string; description: string };
+
+const blank = (): Omit<CategoryRow, "productCount" | "childCount" | "parentName" | "parentSlug" | "id"> => ({
   name: "",
   slug: "",
   description: "",
+  bottomContent: "",
   imageUrl: "",
+  bannerImageUrl: "",
   parentId: "",
-  position: 0,
+  hsnCodeId: "",
   isActive: true,
+  showInMenu: true,
   metaTitle: "",
   metaDescription: "",
 });
 
-export default function CategoryManager({ categories }: { categories: CategoryRow[] }) {
+export default function CategoryManager({ categories, hsnCodes }: { categories: CategoryRow[]; hsnCodes: HsnChoice[] }) {
   const router = useRouter();
   const { toast } = useToast();
   const [editing, setEditing] = useState<CategoryRow | null>(null);
@@ -83,6 +92,7 @@ export default function CategoryManager({ categories }: { categories: CategoryRo
           <CategoryForm
             initial={editing ?? { ...blank(), id: undefined }}
             parents={parents.filter((p) => p.id !== editing?.id)}
+            hsnCodes={hsnCodes}
             onDone={() => {
               setCreating(false);
               setEditing(null);
@@ -189,7 +199,7 @@ function Row({
           )}
         </div>
         <p className="text-xs text-slate-400">
-          /category/{category.slug} · {category.productCount}{" "}
+          /{category.parentSlug ? `${category.parentSlug}/` : ""}{category.slug} · {category.productCount}{" "}
           {category.productCount === 1 ? "product" : "products"}
           {category.childCount > 0 && ` · ${category.childCount} sub-categories`}
         </p>
@@ -245,11 +255,13 @@ function Row({
 function CategoryForm({
   initial,
   parents,
+  hsnCodes,
   onDone,
   onCancel,
 }: {
   initial: Partial<CategoryRow> & { id?: string };
   parents: CategoryRow[];
+  hsnCodes: HsnChoice[];
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -259,10 +271,13 @@ function CategoryForm({
     name: initial.name ?? "",
     slug: initial.slug ?? "",
     description: initial.description ?? "",
+    bottomContent: initial.bottomContent ?? "",
     imageUrl: initial.imageUrl ?? "",
+    bannerImageUrl: initial.bannerImageUrl ?? "",
     parentId: initial.parentId ?? "",
-    position: String(initial.position ?? 0),
+    hsnCodeId: initial.hsnCodeId ?? "",
     isActive: initial.isActive ?? true,
+    showInMenu: initial.showInMenu ?? true,
     metaTitle: initial.metaTitle ?? "",
     metaDescription: initial.metaDescription ?? "",
   });
@@ -281,19 +296,18 @@ function CategoryForm({
     setFormError(null);
     setFields({});
 
-    const body: Record<string, unknown> = { ...values };
-    if (editing) body.id = initial.id;
-
     const result = await apiRequest("/api/admin/categories", {
       method: editing ? "PATCH" : "POST",
-      body,
+      body: editing ? { id: initial.id, data: values } : values,
     });
 
     setPending(false);
 
     if (!result.ok) {
       setFormError(result.error);
-      if (result.fields) setFields(result.fields);
+      if (result.fields) {
+        setFields(Object.fromEntries(Object.entries(result.fields).map(([k, v]) => [k.replace(/^data\./, ""), v])));
+      }
       return;
     }
 
@@ -330,7 +344,7 @@ function CategoryForm({
         <Field
           label="URL slug"
           error={fields.slug}
-          hint={`/category/${values.slug || "your-slug"}`}
+          hint={`/${values.parentId ? `${parents.find((p) => p.id === values.parentId)?.slug ?? ""}/` : ""}${values.slug || "your-slug"}`}
           required
         >
           {(props) => (
@@ -367,7 +381,9 @@ function CategoryForm({
       </Field>
 
       <ImageUploader
-        label="Category image (one)"
+        label="Category image (home page and menu)"
+        folder="categories"
+        max={1}
         images={values.imageUrl ? [{ url: values.imageUrl, alt: "" }] : []}
         onChange={(images) =>
           setValues((v) => ({ ...v, imageUrl: images[0]?.url ?? "" }))
@@ -393,20 +409,25 @@ function CategoryForm({
           )}
         </Field>
 
-        <Field label="Sort position" error={fields.position} hint="Lower shows first.">
+        <Field label="HSN code (GST)" error={fields.hsnCodeId} hint="Used for every product in this category unless the product sets its own.">
           {(props) => (
-            <input
+            <select
               {...props}
-              type="number"
-              min={0}
-              value={values.position}
-              onChange={(e) => setValues((v) => ({ ...v, position: e.target.value }))}
+              value={values.hsnCodeId}
+              onChange={(e) => setValues((v) => ({ ...v, hsnCodeId: e.target.value }))}
               className="hf-input"
-            />
+            >
+              <option value="">None</option>
+              {hsnCodes.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.code} — {h.description}
+                </option>
+              ))}
+            </select>
           )}
         </Field>
 
-        <div className="flex items-end pb-2">
+        <div className="flex flex-col justify-end gap-2 pb-2">
           <label className="flex items-center gap-2.5 text-sm">
             <input
               type="checkbox"
@@ -414,16 +435,50 @@ function CategoryForm({
               onChange={(e) => setValues((v) => ({ ...v, isActive: e.target.checked }))}
               className="h-4 w-4 rounded border-cotton-400 accent-indigo-ink-800"
             />
-            <span className="font-medium text-indigo-ink-900">Visible on store</span>
+            <span className="font-medium text-indigo-ink-900">Visible in the shop</span>
+          </label>
+          <label className="flex items-center gap-2.5 text-sm">
+            <input
+              type="checkbox"
+              checked={values.showInMenu}
+              onChange={(e) => setValues((v) => ({ ...v, showInMenu: e.target.checked }))}
+              className="h-4 w-4 rounded border-cotton-400 accent-indigo-ink-800"
+            />
+            <span className="font-medium text-indigo-ink-900">Show in the menu</span>
           </label>
         </div>
       </div>
+
+      <ImageUploader
+        label="Banner image (top of the category page)"
+        folder="categories"
+        max={1}
+        images={values.bannerImageUrl ? [{ url: values.bannerImageUrl, alt: "" }] : []}
+        onChange={(images) => setValues((v) => ({ ...v, bannerImageUrl: images[0]?.url ?? "" }))}
+      />
 
       <details className="rounded-lg border border-cotton-300 bg-cotton-50 p-4">
         <summary className="cursor-pointer text-sm font-semibold text-indigo-ink-900">
           Search engine settings
         </summary>
         <div className="mt-4 space-y-4">
+          <Field
+            label="Text at the bottom of the page"
+            error={fields.bottomContent}
+            hint="A few paragraphs about this category help Google rank the page. Shown below the products."
+          >
+            {(props) => (
+              <textarea
+                {...props}
+                value={values.bottomContent}
+                onChange={(e) => setValues((v) => ({ ...v, bottomContent: e.target.value }))}
+                rows={6}
+                maxLength={10000}
+                className="hf-input resize-y"
+              />
+            )}
+          </Field>
+
           <Field
             label="Meta title"
             error={fields.metaTitle}
@@ -444,7 +499,7 @@ function CategoryForm({
           <Field
             label="Meta description"
             error={fields.metaDescription}
-            hint={`${values.metaDescription.length}/160 characters`}
+            hint={`${values.metaDescription.length}/170 characters`}
           >
             {(props) => (
               <textarea
@@ -454,7 +509,7 @@ function CategoryForm({
                   setValues((v) => ({ ...v, metaDescription: e.target.value }))
                 }
                 rows={2}
-                maxLength={160}
+                maxLength={170}
                 className="hf-input resize-y"
               />
             )}

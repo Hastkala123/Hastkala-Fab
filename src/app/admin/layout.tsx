@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentUser, isAdminRole } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
+import { ALL_PERMISSIONS, type Permission } from "@/server/auth/permissions";
 import AdminNav from "./AdminNav";
 
 export const metadata: Metadata = {
@@ -28,7 +29,7 @@ export default async function AdminLayout({
   const user = await getCurrentUser();
 
   if (!user) redirect("/login?next=/admin");
-  if (!isAdminRole(user.role)) {
+  if (!user.isStaff) {
     // A signed-in non-admin is sent to their own account rather than shown a
     // 403, so the portal's existence is not confirmed to a curious customer.
     redirect("/account");
@@ -68,7 +69,7 @@ export default async function AdminLayout({
               </span>
               <div className="hidden leading-tight sm:block">
                 <p className="text-xs font-semibold text-cotton-50">{user.name}</p>
-                <p className="text-[10px] text-cotton-300">{user.role}</p>
+                <p className="text-[10px] text-cotton-300">{user.isOwner ? "Owner" : "Staff"}</p>
               </div>
             </div>
           </div>
@@ -76,7 +77,7 @@ export default async function AdminLayout({
       </header>
 
       <div className="mx-auto flex w-full max-w-[1600px] flex-1 gap-6 px-4 py-6 sm:px-6">
-        <AdminNav isSuperAdmin={user.role === "SUPERADMIN"} />
+        <AdminNav permissions={user.isOwner ? ALL_PERMISSIONS : (user.permissions as Permission[])} />
         <main className="min-w-0 flex-1">{children}</main>
       </div>
     </div>

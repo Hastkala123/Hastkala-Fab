@@ -5,37 +5,45 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { apiRequest } from "@/lib/client-api";
 import { cn } from "@/lib/utils";
+import type { Permission } from "@/server/auth/permissions";
 
-const SECTIONS = [
+type NavLink = { href: string; label: string; exact?: boolean; permission: Permission };
+
+/** Each link shows only to staff whose role has the permission (Admin → Staff). */
+const SECTIONS: { title: string; links: NavLink[] }[] = [
   {
     title: "Overview",
-    links: [{ href: "/admin", label: "Dashboard", exact: true }],
+    links: [{ href: "/admin", label: "Dashboard", exact: true, permission: "dashboard.view" }],
   },
   {
     title: "Catalogue",
     links: [
-      { href: "/admin/products", label: "Products" },
-      { href: "/admin/categories", label: "Categories" },
+      { href: "/admin/products", label: "Products", permission: "catalog.manage" },
+      { href: "/admin/categories", label: "Categories", permission: "catalog.manage" },
     ],
   },
   {
     title: "Sales",
     links: [
-      { href: "/admin/orders", label: "Orders" },
-      { href: "/admin/coupons", label: "Coupons" },
+      { href: "/admin/orders", label: "Orders", permission: "orders.view" },
+      { href: "/admin/coupons", label: "Coupons", permission: "marketing.manage" },
     ],
   },
   {
     title: "Customers",
     links: [
-      { href: "/admin/customers", label: "Customers" },
-      { href: "/admin/reviews", label: "Reviews" },
-      { href: "/admin/tickets", label: "Support tickets" },
+      { href: "/admin/customers", label: "Customers", permission: "customers.view" },
+      { href: "/admin/reviews", label: "Reviews", permission: "reviews.manage" },
+      { href: "/admin/tickets", label: "Support tickets", permission: "support.manage" },
     ],
+  },
+  {
+    title: "Store",
+    links: [{ href: "/admin/settings", label: "Settings", permission: "settings.manage" }],
   },
 ];
 
-export default function AdminNav({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+export default function AdminNav({ permissions }: { permissions: readonly Permission[] }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -46,15 +54,10 @@ export default function AdminNav({ isSuperAdmin }: { isSuperAdmin: boolean }) {
     router.refresh();
   }
 
-  const sections = isSuperAdmin
-    ? [
-        ...SECTIONS,
-        {
-          title: "System",
-          links: [{ href: "/admin/audit", label: "Audit log" }],
-        },
-      ]
-    : SECTIONS;
+  const sections = SECTIONS.map((section) => ({
+    ...section,
+    links: section.links.filter((link) => permissions.includes(link.permission)),
+  })).filter((section) => section.links.length > 0);
 
   const nav = (
     <nav aria-label="Admin navigation" className="space-y-5">

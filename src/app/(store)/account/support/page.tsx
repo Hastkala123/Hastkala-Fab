@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
-import { formatDate } from "@/lib/utils";
+import { requireUserPage } from "@/server/auth/page-guard";
+import { formatDate, TICKET_CATEGORY_LABELS, TICKET_STATUS_LABELS } from "@/lib/utils";
+import NewTicketForm from "./NewTicketForm";
 
 export const metadata: Metadata = {
   title: "My Support Tickets",
@@ -14,19 +15,22 @@ export const dynamic = "force-dynamic";
 const TICKET_STATUS_STYLES: Record<string, string> = {
   OPEN: "bg-amber-50 text-amber-700",
   IN_PROGRESS: "bg-blue-50 text-blue-700",
+  WAITING_ON_CUSTOMER: "bg-amber-50 text-amber-800",
   RESOLVED: "bg-emerald-50 text-emerald-700",
   CLOSED: "bg-slate-100 text-slate-600",
 };
 
-export default async function SupportPage() {
-  const user = await requireUser();
+export default async function SupportPage({ searchParams }: { searchParams: Promise<{ order?: string }> }) {
+  const user = await requireUserPage();
+  const { order } = await searchParams;
+  const orderNumber = typeof order === "string" && /^HF-\d{6,9}$/.test(order) ? order : "";
 
-  const tickets = await db.helpTicket.findMany({
+  const tickets = await db.supportTicket.findMany({
     where: { userId: user.id },
     orderBy: { updatedAt: "desc" },
     include: {
-      messages: { orderBy: { createdAt: "desc" }, take: 1 },
-      _count: { select: { messages: true } },
+      messages: { where: { isInternal: false }, orderBy: { createdAt: "desc" }, take: 1 },
+      _count: { select: { messages: { where: { isInternal: false } } } },
     },
   });
 
@@ -43,20 +47,17 @@ export default async function SupportPage() {
               : `${tickets.length} ${tickets.length === 1 ? "ticket" : "tickets"}`}
           </p>
         </div>
-        <Link href="/help" className="hf-btn hf-btn-primary">
+        <a href="#new-ticket" className="hf-btn hf-btn-primary">
           Raise a new ticket
-        </Link>
+        </a>
       </div>
 
       {tickets.length === 0 ? (
         <div className="hf-card mt-6 p-10 text-center">
           <p className="text-sm text-slate-500">
             If you have a question about an order, a return or a wholesale enquiry,
-            raise a ticket and our team will respond within one working day.
+            raise a ticket below and our team will get back to you.
           </p>
-          <Link href="/help" className="hf-btn hf-btn-outline mt-5">
-            Go to Help Centre
-          </Link>
         </div>
       ) : (
         <ul className="mt-6 space-y-3">
@@ -72,14 +73,14 @@ export default async function SupportPage() {
                       {ticket.subject}
                     </p>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      {ticket.ticketNumber} · {ticket.category.toLowerCase()} ·{" "}
+                      {ticket.ticketNumber} · {(TICKET_CATEGORY_LABELS[ticket.category] ?? ticket.category).toLowerCase()} ·{" "}
                       {ticket._count.messages}{" "}
                       {ticket._count.messages === 1 ? "message" : "messages"}
                     </p>
                     {ticket.messages[0] && (
                       <p className="hf-clamp-1 mt-1.5 text-xs text-slate-500">
                         <strong>
-                          {ticket.messages[0].authorRole === "ADMIN" ? "Support" : "You"}:
+                          {ticket.messages[0].authorType === "STAFF" ? "Support" : "You"}:
                         </strong>{" "}
                         {ticket.messages[0].body}
                       </p>
@@ -90,7 +91,7 @@ export default async function SupportPage() {
                     <span
                       className={`hf-badge ${TICKET_STATUS_STYLES[ticket.status] ?? ""}`}
                     >
-                      {ticket.status.replace("_", " ")}
+                      {TICKET_STATUS_LABELS[ticket.status] ?? ticket.status}
                     </span>
                     <time
                       dateTime={ticket.updatedAt.toISOString()}
@@ -105,6 +106,12 @@ export default async function SupportPage() {
           ))}
         </ul>
       )}
+      <section id="new-ticket" className="hf-card mt-8 scroll-mt-24 p-5 sm:p-6">
+        <h2 className="font-display text-lg font-bold text-indigo-ink-950">Raise a new ticket</h2>
+        <div className="mt-4">
+          <NewTicketForm orderNumber={orderNumber} />
+        </div>
+      </section>
     </div>
   );
 }

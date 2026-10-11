@@ -42,6 +42,11 @@ export type QuoteLineInput = {
   wholesaleUnitPrice?: number | null;
   /** Pieces needed for the wholesale price (shown when not yet met). */
   wholesaleMinQty?: number | null;
+  /**
+   * Pieces in one unit (a "pack of 3" variant). GST bands are judged per
+   * piece, so a ₹4,000 pack of two ₹2,000 kurtis is taxed at the lower rate.
+   */
+  piecesPerUnit?: number;
 };
 
 export type QuoteSettings = {
@@ -143,7 +148,8 @@ export function buildQuote(input: QuoteInput): Quote {
         // pre-tax equivalent, so the buyer still pays exactly the retail price.
         if (!pricesIncludeTax) {
           try {
-            const { rateBps } = selectRate(line.retailUnitPrice, line.taxBands, true);
+            const pieces = Math.max(1, line.piecesPerUnit ?? 1);
+            const { rateBps } = selectRate(Math.round(line.retailUnitPrice / pieces), line.taxBands, true);
             unitPrice = extractTaxable(line.retailUnitPrice, rateBps);
           } catch (error) {
             if (!(error instanceof TaxConfigError)) throw error;
@@ -192,7 +198,8 @@ export function buildQuote(input: QuoteInput): Quote {
     const discountAllocated = discounts[i]!;
     const lineNet = p.lineSubtotal - discountAllocated;
     try {
-      const tax = computeLineTax(lineNet, p.line.quantity, p.line.taxBands, mode);
+      const pieces = p.line.quantity * Math.max(1, p.line.piecesPerUnit ?? 1);
+      const tax = computeLineTax(lineNet, pieces, p.line.taxBands, mode);
       return {
         key: p.line.key,
         unitPrice: p.unitPrice,

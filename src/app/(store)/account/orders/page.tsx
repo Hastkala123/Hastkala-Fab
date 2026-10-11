@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUserPage } from "@/server/auth/page-guard";
 import { formatPrice } from "@/lib/money";
-import { formatDate, STATUS_LABELS, STATUS_STYLES } from "@/lib/utils";
+import { formatDate, ORDER_STATUS_LABELS, STATUS_STYLES } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "My Orders",
@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function OrdersPage() {
-  const user = await requireUser();
+  const user = await requireUserPage();
 
   const orders = await db.order.findMany({
     where: { userId: user.id },
@@ -38,7 +38,7 @@ export default async function OrdersPage() {
           <p className="text-sm text-slate-500">
             When you place an order it will appear here, with live tracking.
           </p>
-          <Link href="/products" className="hf-btn hf-btn-primary mt-5">
+          <Link href="/search" className="hf-btn hf-btn-primary mt-5">
             Browse the collection
           </Link>
         </div>
@@ -63,13 +63,13 @@ export default async function OrdersPage() {
                   <div>
                     <p className="uppercase tracking-wide text-slate-500">Total</p>
                     <p className="font-semibold text-indigo-ink-900">
-                      {formatPrice(order.total)}
+                      {formatPrice(order.grandTotal)}
                     </p>
                   </div>
                 </div>
 
                 <span className={`hf-badge ${STATUS_STYLES[order.status] ?? ""}`}>
-                  {STATUS_LABELS[order.status] ?? order.status}
+                  {ORDER_STATUS_LABELS[order.status] ?? order.status}
                 </span>
               </div>
 
@@ -80,10 +80,10 @@ export default async function OrdersPage() {
                       key={item.id}
                       className="relative aspect-square w-14 overflow-hidden rounded-lg border-2 border-white bg-cotton-100"
                     >
-                      {item.imageSnapshot ? (
+                      {item.imageUrl ? (
                         <Image
-                          src={item.imageSnapshot}
-                          alt={item.titleSnapshot}
+                          src={item.imageUrl}
+                          alt={item.title}
                           fill
                           sizes="56px"
                           className="object-cover"
@@ -102,15 +102,10 @@ export default async function OrdersPage() {
 
                 <div className="min-w-0 flex-1">
                   <p className="hf-clamp-1 text-sm font-medium text-indigo-ink-900">
-                    {order.items[0]?.titleSnapshot}
+                    {order.items[0]?.title}
                     {order._count.items > 1 &&
                       ` and ${order._count.items - 1} more`}
                   </p>
-                  {order.trackingNumber && (
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      {order.courierName ?? "Courier"} · {order.trackingNumber}
-                    </p>
-                  )}
                 </div>
 
                 <Link

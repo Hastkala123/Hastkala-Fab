@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { env } from "@/lib/env";
+import { jsonLd } from "@/lib/jsonld";
 
 export type Crumb = { href: string; label: string };
 
@@ -11,7 +12,7 @@ export type Crumb = { href: string; label: string };
  * on category and product pages.
  */
 export default function Breadcrumbs({ items }: { items: Crumb[] }) {
-  const jsonLd = {
+  const structured = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: items.map((item, index) => ({
@@ -26,7 +27,7 @@ export default function Breadcrumbs({ items }: { items: Crumb[] }) {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={jsonLd(structured)}
       />
       <nav aria-label="Breadcrumb">
         <ol className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">

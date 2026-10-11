@@ -2,86 +2,57 @@ import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
-import { canSeeWholesalePricing, getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { env } from "@/lib/env";
+import { jsonLd as toJsonLd } from "@/lib/jsonld";
+import {
+  featuredProducts,
+  getCategories,
+  liveProductWhere,
+  listProducts,
+  newArrivals as loadNewArrivals,
+} from "@/server/catalog/products";
+import { getViewer } from "@/server/catalog/viewer";
+import { getSettings } from "@/server/settings";
+import { wishlistIdsFor } from "@/server/catalog/wishlist";
 import ProductCard, { type ProductCardData } from "@/components/store/ProductCard";
 
 export const metadata: Metadata = {
-  title: "Hastkala Fab — Authentic Sanganeri Print Kurtis, Sarees, Suits & Bedsheets",
+  title: { absolute: "Hastkala Fab — Sanganeri Hand Block Print Kurtis, Sarees, Suits & Bedsheets" },
   description:
-    "Shop hand-block Sanganeri print kurtis, sarees, ladies suit sets and pure cotton bedsheets direct from Sanganer, Jaipur. Retail & wholesale. Free shipping above ₹999.",
+    "Shop hand-block Sanganeri print kurtis, salwar suits, sarees and pure cotton bedsheets direct from Sanganer, Jaipur. Retail and wholesale.",
   alternates: { canonical: "/" },
 };
 
-// The homepage personalises pricing and wishlist state per visitor, so it reads
-// cookies and must render dynamically. Caching happens at the data layer
-// instead — see the indexed queries in prisma/schema.prisma.
+// Prices and wishlist hearts differ per visitor, so the page renders per request.
 export const dynamic = "force-dynamic";
-
-const productSelect = {
-  id: true,
-  title: true,
-  slug: true,
-  priceRetail: true,
-  priceWholesale: true,
-  mrp: true,
-  stock: true,
-  isNew: true,
-  fabric: true,
-  ratingAvg: true,
-  ratingCount: true,
-  images: { orderBy: { position: "asc" }, take: 2, select: { url: true, alt: true } },
-} as const;
 
 export default async function HomePage() {
   const user = await getCurrentUser();
-  const wholesale = canSeeWholesalePricing(user) && user?.role === "WHOLESALE";
+  const viewer = await getViewer();
 
-  const [categories, featured, newArrivals, bestSellers, stats] = await Promise.all([
-    db.category.findMany({
-      where: { isActive: true, parentId: null },
-      orderBy: { position: "asc" },
-      take: 6,
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        imageUrl: true,
-        description: true,
-        _count: { select: { products: true } },
-      },
-    }),
-    db.product.findMany({
-      where: { isActive: true, isFeatured: true },
-      orderBy: { createdAt: "desc" },
-      take: 8,
-      select: productSelect,
-    }),
-    db.product.findMany({
-      where: { isActive: true },
-      orderBy: { createdAt: "desc" },
-      take: 8,
-      select: productSelect,
-    }),
-    db.product.findMany({
-      where: { isActive: true, soldCount: { gt: 0 } },
-      orderBy: { soldCount: "desc" },
-      take: 4,
-      select: productSelect,
-    }),
-    db.product.aggregate({ _count: { id: true } }),
+  const [allCategories, featured, newArrivals, popular, designCount, wishlistIds] = await Promise.all([
+    getCategories(),
+    featuredProducts(viewer, 8),
+    loadNewArrivals(viewer, 8),
+    listProducts({ sort: "popular", page: 1 }, viewer),
+    db.product.count({ where: liveProductWhere() }),
+    wishlistIdsFor(user),
   ]);
-
-  const wishlistIds = user
-    ? new Set(
-        (
-          await db.wishlistItem.findMany({
-            where: { userId: user.id },
-            select: { productId: true },
-          })
-        ).map((w) => w.productId),
-      )
-    : new Set<string>();
+  const topLevel = allCategories.filter((c) => c.parentId === null && c.showInMenu).slice(0, 6);
+  const counts = await db.product.groupBy({
+    by: ["categoryId"],
+    where: { AND: [liveProductWhere(), { categoryId: { in: allCategories.map((c) => c.id) } }] },
+    _count: { _all: true },
+  });
+  const countFor = (id: string) =>
+    allCategories
+      .filter((c) => c.id === id || c.parentId === id)
+      .reduce((sum, c) => sum + (counts.find((row) => row.categoryId === c.id)?._count._all ?? 0), 0);
+  const categories = topLevel.map((c) => ({ ...c, productCount: countFor(c.id) }));
+  const bestSellers = popular.products.slice(0, 4);
+  const stats = { designs: designCount };
+  const returnDays = (await getSettings()).returns.windowDays;
 
   // Organisation + WebSite JSON-LD. This is what earns the sitelinks search box
   // and the knowledge panel in Google results.
@@ -112,7 +83,7 @@ export default async function HomePage() {
           "@type": "SearchAction",
           target: {
             "@type": "EntryPoint",
-            urlTemplate: `${env.NEXT_PUBLIC_SITE_URL}/products?q={search_term_string}`,
+            urlTemplate: `${env.NEXT_PUBLIC_SITE_URL}/search?q={search_term_string}`,
           },
           "query-input": "required name=search_term_string",
         },
@@ -124,7 +95,7 @@ export default async function HomePage() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={toJsonLd(jsonLd)}
       />
 
       {/* ---------------- Hero ---------------- */}
@@ -159,7 +130,7 @@ export default async function HomePage() {
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/products" className="hf-btn hf-btn-accent px-6 py-3 text-base">
+              <Link href="/search" className="hf-btn hf-btn-accent px-6 py-3 text-base">
                 Shop the collection
               </Link>
               <Link
@@ -171,9 +142,8 @@ export default async function HomePage() {
             </div>
 
             <dl className="mt-10 flex flex-wrap gap-x-10 gap-y-4">
-              <HeroStat value={`${stats._count.id}+`} label="Handpicked designs" />
-              <HeroStat value="100%" label="Pure cotton" />
-              <HeroStat value="7-day" label="Easy returns" />
+              <HeroStat value={`${stats.designs}`} label="Handpicked designs" />
+              {returnDays > 0 && <HeroStat value={`${returnDays}-day`} label="Easy returns" />}
             </dl>
           </div>
         </div>
@@ -199,7 +169,7 @@ export default async function HomePage() {
             {categories.map((category, index) => (
               <Link
                 key={category.id}
-                href={`/category/${category.slug}`}
+                href={`/${category.slug}`}
                 className="group relative overflow-hidden rounded-card ring-1 ring-cotton-300 transition hover:ring-indigo-ink-400"
               >
                 <div className="relative aspect-[4/3] bg-cotton-200">
@@ -233,8 +203,8 @@ export default async function HomePage() {
                     {category.name}
                   </h3>
                   <p className="mt-0.5 text-xs text-cotton-200/80">
-                    {category._count.products}{" "}
-                    {category._count.products === 1 ? "design" : "designs"}
+                    {category.productCount}{" "}
+                    {category.productCount === 1 ? "design" : "designs"}
                   </p>
                 </div>
               </Link>
@@ -251,11 +221,10 @@ export default async function HomePage() {
               eyebrow="Handpicked"
               title="Featured this season"
               description="The pieces our artisans and our customers keep coming back to."
-              action={{ href: "/products", label: "View all" }}
+              action={{ href: "/search", label: "View all" }}
             />
             <ProductGrid
               products={featured}
-              wholesale={wholesale}
               wishlistIds={wishlistIds}
             />
           </div>
@@ -324,11 +293,10 @@ export default async function HomePage() {
               eyebrow="Fresh off the block"
               title="New arrivals"
               description="Just printed, just listed."
-              action={{ href: "/products?sort=newest", label: "See all new" }}
+              action={{ href: "/search?sort=newest", label: "See all new" }}
             />
             <ProductGrid
               products={newArrivals}
-              wholesale={wholesale}
               wishlistIds={wishlistIds}
             />
           </div>
@@ -341,11 +309,10 @@ export default async function HomePage() {
           <SectionHeading
             eyebrow="Loved by our customers"
             title="Best sellers"
-            action={{ href: "/products?sort=popular", label: "View all" }}
+            action={{ href: "/search?sort=popular", label: "View all" }}
           />
           <ProductGrid
             products={bestSellers}
-            wholesale={wholesale}
             wishlistIds={wishlistIds}
           />
         </section>
@@ -394,11 +361,9 @@ export default async function HomePage() {
 
 function ProductGrid({
   products,
-  wholesale,
   wishlistIds,
 }: {
   products: ProductCardData[];
-  wholesale: boolean;
   wishlistIds: Set<string>;
 }) {
   return (
@@ -407,7 +372,6 @@ function ProductGrid({
         <ProductCard
           key={product.id}
           product={product}
-          showWholesale={wholesale}
           priority={index < 4}
           wishlisted={wishlistIds.has(product.id)}
         />

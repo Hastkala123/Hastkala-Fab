@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireStaffPage } from "@/server/auth/page-guard";
 import { formatDate } from "@/lib/utils";
 import ReviewModeration from "./ReviewModeration";
 
@@ -13,13 +13,13 @@ export default async function AdminReviewsPage({
 }: {
   searchParams: Promise<{ filter?: string }>;
 }) {
-  await requireAdmin();
+  await requireStaffPage("reviews.manage");
   const params = await searchParams;
   const showApproved = params.filter === "approved";
 
   const [reviews, pendingCount, approvedCount] = await Promise.all([
     db.review.findMany({
-      where: { isApproved: showApproved },
+      where: { status: showApproved ? "APPROVED" : "PENDING" },
       orderBy: { createdAt: "desc" },
       take: 50,
       include: {
@@ -27,8 +27,8 @@ export default async function AdminReviewsPage({
         product: { select: { title: true, slug: true } },
       },
     }),
-    db.review.count({ where: { isApproved: false } }),
-    db.review.count({ where: { isApproved: true } }),
+    db.review.count({ where: { status: "PENDING" } }),
+    db.review.count({ where: { status: "APPROVED" } }),
   ]);
 
   return (
@@ -93,7 +93,7 @@ export default async function AdminReviewsPage({
                   </div>
 
                   <Link
-                    href={`/product/${review.product.slug}`}
+                    href={`/products/${review.product.slug}`}
                     target="_blank"
                     rel="noreferrer"
                     className="mt-1.5 block text-xs text-indigo-ink-700 hover:underline"
@@ -102,7 +102,7 @@ export default async function AdminReviewsPage({
                   </Link>
                 </div>
 
-                <ReviewModeration reviewId={review.id} isApproved={review.isApproved} />
+                <ReviewModeration reviewId={review.id} isApproved={review.status === "APPROVED"} />
               </div>
 
               {review.title && (
@@ -111,7 +111,7 @@ export default async function AdminReviewsPage({
                 </h2>
               )}
               <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-                {review.comment}
+                {review.body}
               </p>
 
               <p className="mt-3 text-xs text-slate-400">

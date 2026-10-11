@@ -1,19 +1,13 @@
 import Link from "next/link";
+import { formatPrice } from "@/lib/money";
+import { getCategories } from "@/server/catalog/products";
+import { getSettings } from "@/server/settings";
 import NewsletterForm from "./NewsletterForm";
 
-const shopLinks = [
-  { href: "/category/kurtis", label: "Sanganeri Kurtis" },
-  { href: "/category/sarees", label: "Sanganeri Sarees" },
-  { href: "/category/suits", label: "Ladies Suit Sets" },
-  { href: "/category/bedsheets", label: "Cotton Bedsheets" },
-  { href: "/products?sort=newest", label: "New Arrivals" },
-  { href: "/products?sort=popular", label: "Best Sellers" },
-];
-
 const helpLinks = [
-  { href: "/help", label: "Help Centre" },
+  { href: "/account/support", label: "Help Centre" },
   { href: "/faq", label: "FAQs" },
-  { href: "/track-order", label: "Track Your Order" },
+  { href: "/track", label: "Track Your Order" },
   { href: "/shipping-policy", label: "Shipping & Delivery" },
   { href: "/returns-policy", label: "Returns & Exchange" },
   { href: "/contact", label: "Contact Us" },
@@ -26,7 +20,20 @@ const companyLinks = [
   { href: "/terms", label: "Terms & Conditions" },
 ];
 
-export default function Footer() {
+export default async function Footer() {
+  const [categories, settings] = await Promise.all([getCategories(), getSettings()]);
+  // Shop links follow the categories (and their order) set in Admin → Categories.
+  const shopLinks = [
+    ...categories
+      .filter((c) => c.parentId === null && c.showInMenu)
+      .slice(0, 6)
+      .map((c) => ({ href: `/${c.slug}`, label: c.name })),
+    { href: "/search?sort=newest", label: "New Arrivals" },
+    { href: "/search?sort=popular", label: "Best Sellers" },
+  ];
+  const freeShipping = settings.shipping.freeShippingThreshold;
+  const returnDays = settings.returns.windowDays;
+
   return (
     <footer className="mt-20 border-t border-cotton-300 bg-indigo-ink-950 text-cotton-200">
       <div className="hf-motif" />
@@ -51,15 +58,14 @@ export default function Footer() {
             </div>
 
             <p className="mt-5 max-w-sm text-sm leading-relaxed text-cotton-300/80">
-              Authentic hand-block Sanganeri prints, made the way they have been for
-              four centuries — carved wooden blocks, natural dyes, and pure cotton.
-              We sell direct from Sanganer, Jaipur, to your wardrobe and to retailers
-              across India.
+              Hand-block Sanganeri prints from Sanganer, Jaipur — carved wooden
+              blocks and pure cotton. We sell direct to your wardrobe and to
+              retailers across India.
             </p>
 
             <div className="mt-6">
               <p className="text-xs font-semibold uppercase tracking-wider text-turmeric-400">
-                Get 10% off your first order
+                New prints and offers, in your inbox
               </p>
               <NewsletterForm />
             </div>
@@ -73,10 +79,12 @@ export default function Footer() {
         </div>
 
         <div className="mt-12 grid gap-6 border-t border-white/10 pt-8 sm:grid-cols-2 lg:grid-cols-4">
-          <TrustItem title="Free shipping" detail="On all orders above ₹999" />
-          <TrustItem title="7-day returns" detail="Easy exchange & refund" />
-          <TrustItem title="Secure checkout" detail="Encrypted, PCI-conscious" />
-          <TrustItem title="Wholesale ready" detail="MOQ from 10 pieces" />
+          {freeShipping != null && (
+            <TrustItem title="Free shipping" detail={`On orders of ${formatPrice(freeShipping)} and above`} />
+          )}
+          {returnDays > 0 && <TrustItem title={`${returnDays}-day returns`} detail="Easy exchange & refund" />}
+          <TrustItem title="Secure checkout" detail="UPI, cards, net banking and COD" />
+          <TrustItem title="Wholesale" detail="Trade prices for registered businesses" />
         </div>
 
         <div className="mt-10 flex flex-col gap-4 border-t border-white/10 pt-8 text-xs text-cotton-300/70 sm:flex-row sm:items-center sm:justify-between">
@@ -109,7 +117,7 @@ function FooterColumn({
       </h3>
       <ul className="mt-4 space-y-2.5">
         {links.map((link) => (
-          <li key={link.href}>
+          <li key={link.href + link.label}>
             <Link
               href={link.href}
               className="text-sm text-cotton-300/80 transition hover:text-turmeric-300"

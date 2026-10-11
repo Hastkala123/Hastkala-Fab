@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentUser, isAdminRole } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
+import { formatIndianMobile } from "@/lib/phone";
 import AccountNav from "./AccountNav";
 
 /**
@@ -29,25 +30,29 @@ export default async function AccountLayout({
                 <p className="truncate text-sm font-bold text-indigo-ink-950">
                   {user.name}
                 </p>
-                <p className="truncate text-xs text-slate-500">{user.email}</p>
+                <p className="truncate text-xs text-slate-500">{user.email ?? (user.phone ? formatIndianMobile(user.phone) : "")}</p>
               </div>
             </div>
 
-            {user.role === "WHOLESALE" && (
+            {user.wholesaleStatus && (
               <p
                 className={`mt-3 rounded-lg px-3 py-2 text-xs font-medium ${
-                  user.isApproved
+                  user.wholesaleStatus === "APPROVED"
                     ? "bg-emerald-50 text-emerald-800"
-                    : "bg-turmeric-50 text-turmeric-900"
+                    : user.wholesaleStatus === "PENDING"
+                      ? "bg-turmeric-50 text-turmeric-900"
+                      : "bg-madder-50 text-madder-800"
                 }`}
               >
-                {user.isApproved
-                  ? "✓ Wholesale account approved — trade pricing active"
-                  : "⏳ Wholesale verification in progress"}
+                {user.wholesaleStatus === "APPROVED"
+                  ? "✓ Wholesale account approved — trade prices are on"
+                  : user.wholesaleStatus === "PENDING"
+                    ? "⏳ We're checking your business details"
+                    : "Wholesale account not active — see My profile"}
               </p>
             )}
 
-            {isAdminRole(user.role) && (
+            {user.isStaff && (
               <Link
                 href="/admin"
                 className="hf-btn hf-btn-primary mt-3 w-full py-2 text-sm"

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
-import { formatDateTime } from "@/lib/utils";
+import { requireUserPage } from "@/server/auth/page-guard";
+import { formatDateTime, TICKET_CATEGORY_LABELS, TICKET_STATUS_LABELS } from "@/lib/utils";
 import TicketReply from "./TicketReply";
 
 export const metadata: Metadata = {
@@ -19,12 +19,15 @@ export default async function TicketPage({
   params: Promise<{ ticketNumber: string }>;
 }) {
   const { ticketNumber } = await params;
-  const user = await requireUser();
+  const user = await requireUserPage();
 
   // Scoped to the owner: a ticket number alone must not expose a conversation.
-  const ticket = await db.helpTicket.findFirst({
+  const ticket = await db.supportTicket.findFirst({
     where: { ticketNumber, userId: user.id },
-    include: { messages: { orderBy: { createdAt: "asc" } } },
+    include: {
+      messages: { where: { isInternal: false }, orderBy: { createdAt: "asc" } },
+      order: { select: { orderNumber: true } },
+    },
   });
 
   if (!ticket) notFound();
@@ -41,18 +44,18 @@ export default async function TicketPage({
             {ticket.subject}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            {ticket.ticketNumber} · {ticket.category.toLowerCase()}
-            {ticket.orderNumber && ` · order ${ticket.orderNumber}`}
+            {ticket.ticketNumber} · {(TICKET_CATEGORY_LABELS[ticket.category] ?? ticket.category).toLowerCase()}
+            {ticket.order && ` · order ${ticket.order.orderNumber}`}
           </p>
         </div>
         <span className="hf-badge text-indigo-ink-700">
-          {ticket.status.replace("_", " ")}
+          {TICKET_STATUS_LABELS[ticket.status] ?? ticket.status}
         </span>
       </div>
 
       <ul className="mt-6 space-y-4">
         {ticket.messages.map((message) => {
-          const fromSupport = message.authorRole === "ADMIN";
+          const fromSupport = message.authorType === "STAFF";
           return (
             <li
               key={message.id}
@@ -87,7 +90,7 @@ export default async function TicketPage({
       {ticket.status === "CLOSED" ? (
         <p className="mt-6 rounded-lg bg-cotton-100 px-4 py-3 text-sm text-slate-600">
           This ticket is closed. If you still need help, please{" "}
-          <Link href="/help" className="hf-link font-semibold">
+          <Link href="/account/support#new-ticket" className="hf-link font-semibold">
             raise a new ticket
           </Link>
           .

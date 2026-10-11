@@ -4,11 +4,9 @@ import { pageRange } from "@/lib/utils";
 
 export function ProductGrid({
   products,
-  showWholesale,
   wishlistIds,
 }: {
   products: ProductCardData[];
-  showWholesale: boolean;
   wishlistIds: Set<string>;
 }) {
   return (
@@ -17,7 +15,6 @@ export function ProductGrid({
         <ProductCard
           key={product.id}
           product={product}
-          showWholesale={showWholesale}
           priority={index < 4}
           wishlisted={wishlistIds.has(product.id)}
         />

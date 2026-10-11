@@ -13,10 +13,12 @@ export type AddressValues = {
   phone: string;
   line1: string;
   line2: string | null;
+  landmark: string | null;
   city: string;
   state: string;
   pincode: string;
-  type: string;
+  gstin: string | null;
+  label: string;
   isDefault: boolean;
 };
 
@@ -51,10 +53,12 @@ export default function AddressForm({
       phone: String(form.get("phone") ?? ""),
       line1: String(form.get("line1") ?? ""),
       line2: String(form.get("line2") ?? ""),
+      landmark: String(form.get("landmark") ?? ""),
+      gstin: String(form.get("gstin") ?? ""),
       city: String(form.get("city") ?? ""),
       state: String(form.get("state") ?? ""),
       pincode: String(form.get("pincode") ?? ""),
-      type: String(form.get("type") ?? "HOME"),
+      label: String(form.get("label") ?? "HOME"),
       isDefault: form.get("isDefault") === "on",
     };
     if (editing) body.id = initial!.id;
@@ -127,7 +131,8 @@ export default function AddressForm({
         )}
       </Field>
 
-      <Field label="Area, colony, landmark" error={fields.line2}>
+      <div className="grid gap-4 sm:grid-cols-2">
+      <Field label="Area, colony" error={fields.line2}>
         {(props) => (
           <input
             {...props}
@@ -139,6 +144,20 @@ export default function AddressForm({
           />
         )}
       </Field>
+
+      <Field label="Landmark (optional)" error={fields.landmark}>
+        {(props) => (
+          <input
+            {...props}
+            name="landmark"
+            defaultValue={initial?.landmark ?? ""}
+            maxLength={100}
+            placeholder="Near…"
+            className="hf-input"
+          />
+        )}
+      </Field>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label="PIN code" error={fields.pincode} required>
@@ -190,20 +209,32 @@ export default function AddressForm({
         </Field>
       </div>
 
-      <Field label="Address type" error={fields.type}>
-        {(props) => (
-          <select
-            {...props}
-            name="type"
-            defaultValue={initial?.type ?? "HOME"}
-            className="hf-input"
-          >
-            <option value="HOME">Home</option>
-            <option value="WORK">Work</option>
-            <option value="OTHER">Other</option>
-          </select>
-        )}
-      </Field>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Address type" error={fields.label}>
+          {(props) => (
+            <select {...props} name="label" defaultValue={initial?.label ?? "HOME"} className="hf-input">
+              <option value="HOME">Home</option>
+              <option value="WORK">Work</option>
+              <option value="SHOP">Shop / business</option>
+              <option value="OTHER">Other</option>
+            </select>
+          )}
+        </Field>
+
+        <Field label="GSTIN (optional, for a business invoice)" error={fields.gstin}>
+          {(props) => (
+            <input
+              {...props}
+              name="gstin"
+              defaultValue={initial?.gstin ?? ""}
+              maxLength={15}
+              autoCapitalize="characters"
+              placeholder="08ABCDE1234F1Z5"
+              className="hf-input uppercase"
+            />
+          )}
+        </Field>
+      </div>
 
       <label className="flex items-center gap-2.5 text-sm text-slate-600">
         <input

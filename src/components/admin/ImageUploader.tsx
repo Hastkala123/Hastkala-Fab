@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 export type UploadedImage = { url: string; alt: string };
 
-const MAX_IMAGES = 12;
+const MAX_IMAGES = 15;
 const MAX_MB = 5;
 
 /**
@@ -22,10 +22,14 @@ export default function ImageUploader({
   images,
   onChange,
   label = "Product images",
+  folder = "products",
+  max = MAX_IMAGES,
 }: {
   images: UploadedImage[];
   onChange: (images: UploadedImage[]) => void;
   label?: string;
+  folder?: "products" | "categories" | "banners" | "content";
+  max?: number;
 }) {
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -37,8 +41,8 @@ export default function ImageUploader({
     const list = Array.from(files);
     if (list.length === 0) return;
 
-    if (images.length + list.length > MAX_IMAGES) {
-      toast(`You can add at most ${MAX_IMAGES} images.`, "error");
+    if (images.length + list.length > max) {
+      toast(`You can add at most ${max} image${max === 1 ? "" : "s"}.`, "error");
       return;
     }
 
@@ -50,6 +54,7 @@ export default function ImageUploader({
 
     setUploading(true);
     const formData = new FormData();
+    formData.append("folder", folder);
     for (const file of list) formData.append("files", file);
 
     const result = await apiUpload<{
@@ -96,7 +101,7 @@ export default function ImageUploader({
       <div className="flex items-baseline justify-between">
         <span className="hf-label">{label}</span>
         <span className="text-xs text-slate-400">
-          {images.length}/{MAX_IMAGES}
+          {images.length}/{max}
         </span>
       </div>
 
@@ -126,7 +131,7 @@ export default function ImageUploader({
           onChange={(e) => e.target.files && void upload(e.target.files)}
           className="sr-only"
           id="image-upload-input"
-          disabled={uploading || images.length >= MAX_IMAGES}
+          disabled={uploading || images.length >= max}
         />
 
         <p className="text-sm text-slate-600">

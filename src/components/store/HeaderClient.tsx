@@ -15,9 +15,9 @@ type Category = {
 
 type HeaderUser = {
   name: string;
-  email: string;
-  role: string;
-  isAdmin: boolean;
+  email: string | null;
+  isStaff: boolean;
+  isWholesale: boolean;
 } | null;
 
 export default function HeaderClient({
@@ -77,7 +77,7 @@ export default function HeaderClient({
   function onSearch(event: React.FormEvent) {
     event.preventDefault();
     const trimmed = query.trim();
-    router.push(trimmed ? `/products?q=${encodeURIComponent(trimmed)}` : "/products");
+    router.push(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search");
   }
 
   async function onLogout() {
@@ -134,7 +134,7 @@ export default function HeaderClient({
                 {categories.slice(0, 5).map((category) => (
                   <li key={category.id} className="group relative">
                     <Link
-                      href={`/category/${category.slug}`}
+                      href={`/${category.slug}`}
                       className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-semibold text-indigo-ink-900 transition hover:bg-cotton-200"
                     >
                       {category.name}
@@ -148,7 +148,7 @@ export default function HeaderClient({
                           {category.children.map((child) => (
                             <li key={child.id}>
                               <Link
-                                href={`/category/${child.slug}`}
+                                href={`/${category.slug}/${child.slug}`}
                                 className="block px-4 py-2 text-sm text-indigo-ink-800 transition hover:bg-cotton-100"
                               >
                                 {child.name}
@@ -191,7 +191,7 @@ export default function HeaderClient({
 
             <div className="ml-auto flex items-center gap-0.5 md:ml-0">
               <Link
-                href="/products"
+                href="/search"
                 className="hf-btn hf-btn-ghost px-2.5 md:hidden"
                 aria-label="Search"
               >
@@ -235,11 +235,11 @@ export default function HeaderClient({
                             {user.name}
                           </p>
                           <p className="truncate text-xs text-slate-500">{user.email}</p>
-                          {user.role === "WHOLESALE" && (
+                          {user.isWholesale && (
                             <span className="hf-badge mt-1.5 text-madder-600">Wholesale</span>
                           )}
                         </div>
-                        {user.isAdmin && (
+                        {user.isStaff && (
                           <MenuLink href="/admin" highlight>
                             Admin dashboard
                           </MenuLink>
@@ -248,7 +248,7 @@ export default function HeaderClient({
                         <MenuLink href="/account/orders">My orders</MenuLink>
                         <MenuLink href="/account/wishlist">Wishlist</MenuLink>
                         <MenuLink href="/account/addresses">Addresses</MenuLink>
-                        <MenuLink href="/help">Help centre</MenuLink>
+                        <MenuLink href="/account/support">Help centre</MenuLink>
                         <div className="mt-1 border-t border-cotton-200 pt-1">
                           <button
                             type="button"
@@ -277,8 +277,8 @@ export default function HeaderClient({
                           </Link>
                         </div>
                         <div className="mt-1 border-t border-cotton-200 pt-1">
-                          <MenuLink href="/help">Help centre</MenuLink>
-                          <MenuLink href="/track-order">Track order</MenuLink>
+                          <MenuLink href="/account/support">Help centre</MenuLink>
+                          <MenuLink href="/track">Track order</MenuLink>
                         </div>
                       </>
                     )}
@@ -348,14 +348,14 @@ export default function HeaderClient({
             <nav aria-label="Mobile navigation" className="flex-1 overflow-y-auto p-4">
               <ul className="space-y-1">
                 <li>
-                  <Link href="/products" className="block rounded-lg px-3 py-2.5 font-semibold text-indigo-ink-900 hover:bg-cotton-200">
+                  <Link href="/search" className="block rounded-lg px-3 py-2.5 font-semibold text-indigo-ink-900 hover:bg-cotton-200">
                     All products
                   </Link>
                 </li>
                 {categories.map((category) => (
                   <li key={category.id}>
                     <Link
-                      href={`/category/${category.slug}`}
+                      href={`/${category.slug}`}
                       className="block rounded-lg px-3 py-2.5 font-semibold text-indigo-ink-900 hover:bg-cotton-200"
                     >
                       {category.name}
@@ -365,7 +365,7 @@ export default function HeaderClient({
                         {category.children.map((child) => (
                           <li key={child.id}>
                             <Link
-                              href={`/category/${child.slug}`}
+                              href={`/${category.slug}/${child.slug}`}
                               className="block rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-cotton-200"
                             >
                               {child.name}
@@ -382,8 +382,8 @@ export default function HeaderClient({
                 <MobileLink href="/wholesale" accent>Wholesale enquiry</MobileLink>
                 <MobileLink href="/account/orders">My orders</MobileLink>
                 <MobileLink href="/account/wishlist">Wishlist</MobileLink>
-                <MobileLink href="/track-order">Track order</MobileLink>
-                <MobileLink href="/help">Help centre</MobileLink>
+                <MobileLink href="/track">Track order</MobileLink>
+                <MobileLink href="/account/support">Help centre</MobileLink>
                 <MobileLink href="/faq">FAQ</MobileLink>
                 <MobileLink href="/about">Our story</MobileLink>
               </div>

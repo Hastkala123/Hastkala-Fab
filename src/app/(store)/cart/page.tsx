@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { getCart } from "@/lib/cart";
 import { getCurrentUser } from "@/lib/auth";
+import { getCartView, toCartDisplay } from "@/server/cart";
 import CartView from "./CartView";
 
 export const metadata: Metadata = {
@@ -12,17 +12,14 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function CartPage() {
-  const [cart, user] = await Promise.all([getCart(), getCurrentUser()]);
+  const [view, user] = await Promise.all([getCartView(), getCurrentUser()]);
+  const cart = await toCartDisplay(view);
 
   return (
     <div className="hf-container py-8 sm:py-12">
-      <h1 className="font-display text-3xl font-bold tracking-tight text-indigo-ink-950">
-        Your bag
-      </h1>
+      <h1 className="font-display text-3xl font-bold tracking-tight text-indigo-ink-950">Your bag</h1>
       <p className="mt-1.5 text-sm text-slate-600">
-        {cart.itemCount === 0
-          ? "Nothing here yet."
-          : `${cart.itemCount} ${cart.itemCount === 1 ? "item" : "items"}`}
+        {cart.itemCount === 0 ? "Nothing here yet." : `${cart.itemCount} ${cart.itemCount === 1 ? "item" : "items"}`}
       </p>
 
       <CartView cart={cart} isSignedIn={Boolean(user)} />

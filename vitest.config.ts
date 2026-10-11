@@ -13,9 +13,26 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["tests/**/*.test.ts"],
     environment: "node",
-    // Integration tests share one test database, so files run one at a time.
-    fileParallelism: false,
+    projects: [
+      {
+        extends: true,
+        test: { name: "unit", include: ["tests/unit/**/*.test.ts"] },
+      },
+      {
+        // Real PostgreSQL (TEST_DATABASE_URL). Start it with `npm run db:start`.
+        extends: true,
+        test: {
+          name: "integration",
+          include: ["tests/integration/**/*.test.ts"],
+          globalSetup: ["tests/integration/global-setup.ts"],
+          setupFiles: ["tests/integration/env.ts"],
+          // One shared database, so files run one at a time.
+          fileParallelism: false,
+          testTimeout: 30_000,
+          hookTimeout: 60_000,
+        },
+      },
+    ],
   },
 });

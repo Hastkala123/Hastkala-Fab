@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiRequest } from "@/lib/client-api";
 import { useToast } from "@/components/ui/Toast";
 import AddressForm, { type AddressValues } from "@/components/store/AddressForm";
+import { formatIndianMobile } from "@/lib/phone";
 
 export default function AddressBook({ addresses }: { addresses: AddressValues[] }) {
   const router = useRouter();
@@ -83,7 +84,7 @@ export default function AddressBook({ addresses }: { addresses: AddressValues[] 
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="rounded bg-cotton-200 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
-                      {address.type}
+                      {address.label}
                     </span>
                     {address.isDefault && (
                       <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
@@ -103,10 +104,22 @@ export default function AddressBook({ addresses }: { addresses: AddressValues[] 
                       {address.line2}
                     </>
                   )}
+                  {address.landmark && (
+                    <>
+                      <br />
+                      {address.landmark}
+                    </>
+                  )}
                   <br />
                   {address.city}, {address.state} {address.pincode}
                   <br />
-                  Phone: {address.phone}
+                  Phone: {formatIndianMobile(address.phone)}
+                  {address.gstin && (
+                    <>
+                      <br />
+                      GSTIN: {address.gstin}
+                    </>
+                  )}
                 </address>
 
                 <div className="mt-4 flex gap-2">

@@ -5,13 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiRequest } from "@/lib/client-api";
 import { useToast } from "@/components/ui/Toast";
 
-export default function CancelOrderButton({
-  orderId,
-  orderNumber,
-}: {
-  orderId: string;
-  orderNumber: string;
-}) {
+export default function CancelOrderButton({ orderNumber }: { orderNumber: string }) {
   const router = useRouter();
   const { toast } = useToast();
   const [confirming, setConfirming] = useState(false);
@@ -21,7 +15,7 @@ export default function CancelOrderButton({
   async function cancel() {
     setPending(true);
     const result = await apiRequest("/api/orders/cancel", {
-      body: { orderId, reason },
+      body: { orderNumber, reason },
     });
     setPending(false);
 

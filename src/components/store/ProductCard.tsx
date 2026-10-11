@@ -1,47 +1,32 @@
 import Image from "next/image";
 import Link from "next/link";
 import { discountPercent, formatPrice } from "@/lib/money";
+import { productPath } from "@/lib/routes";
+import type { ProductCardData } from "@/server/catalog/products";
 import WishlistButton from "./WishlistButton";
 
-export type ProductCardData = {
-  id: string;
-  title: string;
-  slug: string;
-  priceRetail: number;
-  priceWholesale: number | null;
-  mrp: number;
-  stock: number;
-  isNew: boolean;
-  fabric: string | null;
-  ratingAvg: number;
-  ratingCount: number;
-  images: { url: string; alt: string }[];
-};
+export type { ProductCardData };
 
 export default function ProductCard({
   product,
-  showWholesale = false,
   priority = false,
   wishlisted = false,
 }: {
   product: ProductCardData;
-  showWholesale?: boolean;
   priority?: boolean;
   wishlisted?: boolean;
 }) {
-  const price =
-    showWholesale && product.priceWholesale != null
-      ? product.priceWholesale
-      : product.priceRetail;
+  const price = product.price;
   const off = discountPercent(product.mrp, price);
-  const image = product.images[0];
-  const secondary = product.images[1];
-  const outOfStock = product.stock <= 0;
+  const image = product.image;
+  const secondary = product.hoverImage;
+  const outOfStock = !product.inStock;
+  const href = productPath(product.slug);
 
   return (
     <article className="group relative">
       <div className="relative overflow-hidden rounded-card bg-cotton-100 ring-1 ring-cotton-300">
-        <Link href={`/product/${product.slug}`} className="block" tabIndex={-1} aria-hidden="true">
+        <Link href={href} className="block" tabIndex={-1} aria-hidden="true">
           <div className="relative aspect-[3/4] w-full">
             {image ? (
               <>
@@ -108,22 +93,21 @@ export default function ProductCard({
         <h3 className="hf-clamp-2 text-sm font-semibold leading-snug text-indigo-ink-900">
           {/* Stretched link: the whole card is clickable, but only one
               focusable element exists for keyboard and screen-reader users. */}
-          <Link href={`/product/${product.slug}`} className="after:absolute after:inset-0">
+          <Link href={href} className="after:absolute after:inset-0">
             {product.title}
           </Link>
         </h3>
 
-        {product.fabric && (
-          <p className="mt-0.5 text-xs text-slate-500">{product.fabric}</p>
-        )}
+        <p className="mt-0.5 text-xs text-slate-500">{product.categoryName}</p>
 
-        {product.ratingCount > 0 && (
+        {product.rating && (
           <div className="mt-1.5 flex items-center gap-1">
             <span className="flex items-center gap-0.5 rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-bold text-emerald-700">
-              {product.ratingAvg.toFixed(1)}
+              {product.rating.average.toFixed(1)}
               <span aria-hidden="true">★</span>
+              <span className="sr-only">out of 5</span>
             </span>
-            <span className="text-[11px] text-slate-400">({product.ratingCount})</span>
+            <span className="text-[11px] text-slate-400">({product.rating.count})</span>
           </div>
         )}
 
@@ -138,9 +122,10 @@ export default function ProductCard({
           )}
         </div>
 
-        {showWholesale && product.priceWholesale != null && (
-          <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-madder-600">
-            Wholesale rate
+        {product.wholesale && (
+          <p className="mt-1 text-xs font-semibold text-madder-600">
+            Wholesale {formatPrice(product.wholesale.unitPrice)}
+            {product.wholesale.plusGst ? " + GST" : ""} · {product.wholesale.minQuantity}+ pcs
           </p>
         )}
       </div>
