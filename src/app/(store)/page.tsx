@@ -272,7 +272,7 @@ export default async function HomePage() {
             </h2>
             <p className="mt-4 text-base leading-relaxed text-slate-600">
               Sanganeri printing began on the banks of the Saraswati near Jaipur,
-              where the water's mineral content set natural dyes in a way no other
+              where the water&apos;s mineral content set natural dyes in a way no other
               river could. Our printers still work that way: teak blocks carved by
               hand, dyes ground from madder root, indigo and turmeric, and fabric
               washed in the open sun.

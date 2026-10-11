@@ -296,3 +296,22 @@ Every admin change is saved in the audit log (who changed what, and when).
 **Then Phase 2 (Build):** payments → invoices → shipping/tracking → returns/refunds → notifications → missing pages → wholesale portal → admin modules.
 
 Critical and high bugs that touch code being rebuilt (C2–C5, H1–H8) are fixed *as part of* those phases rather than patched twice.
+
+---
+
+## 8. Step 0 results (11 October 2026)
+
+| Item | Result |
+|---|---|
+| Project moved out of iCloud | Copied to `~/Projects/hastkala-fab` (all 165 files downloaded locally; 0 cloud-only placeholders). The old `~/Desktop/Hastkala Fab` folder is untouched and can be deleted once you've confirmed the new one works. |
+| Version history | `git init` on `main`; baseline commit `c0c7307` holds the original code exactly as found. |
+| **C1** Next.js vulnerabilities | **Fixed.** `next` 16.3.2 → **16.3.8** (latest patch of the same line). `npm audit --omit=dev` → **0 vulnerabilities** in what ships to the website. 5 "high" advisories remain in the dev-only ESLint toolchain (`braces` via `fast-glob`); they never reach the live site and have no fix available yet. |
+| **C7** Hard-coded admin password | **Fixed.** `prisma/seed.ts` now reads `SEED_ADMIN_PASSWORD` from `.env` (validated by the same password rules as sign-up), never overwrites an existing admin's password, refuses to run when `NODE_ENV=production` unless `SEED_ALLOW_PRODUCTION=true`, and creates demo shoppers only outside production with a random password. Tested on a fresh database: the env password works and `Hastkala@2026` does not. A strong random local password was added to your `.env`. |
+| **H12** Lint | **Fixed.** `npm run lint` now runs ESLint 9 with the official Next.js rules (`eslint.config.mjs`). Initial run: 3 errors + 6 warnings → fixed to **0 errors, 1 warning** (Google Fonts `<link>`, fixed with `next/font` in Phase 2 — L2). Tests are still missing (Phase 5). |
+| **New bug found — B1 (Critical): production build was broken** | `next build` failed type-checking on **all 22 API routes** because the shared `handler()` wrapper typed the route context as `never`. The site could not have been built for a live server. **Fixed** in `src/lib/api.ts` (`RouteContext` type). |
+| Lint fixes made | Unescaped apostrophe on the homepage; impure `Date.now()` in the admin dashboard; header menus closed via `setState` inside an effect (now adjusted during render); ternary-as-statement in `FilterSidebar`; unused `MOTIFS` value and stale lint-disable comments. |
+| Typecheck | ✅ `tsc --noEmit` passes (4 s). |
+| Lint | ✅ 0 errors, 1 warning. |
+| Production build | ✅ `next build` passes (51 routes). |
+| Smoke test of the built site | ✅ Home, product listing, category, product, cart, login and signup return 200. `/admin` and `/account` redirect logged-out visitors to `/login`. A cart write without the CSRF token is rejected (403). Security headers present. `/terms` and `/track-order` still 404 (C6, Phase 2). |
+| New low-priority note — L14 | Visiting `/admin` or `/account` while logged out redirects correctly but also prints `AuthError: Authentication required` to the server log as an error (log noise). |

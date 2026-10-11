@@ -120,8 +120,10 @@ export default function FilterSidebar({ facets }: { facets: Facets }) {
               type="button"
               onClick={() => {
                 const params = new URLSearchParams(searchParams.toString());
-                preset.min ? params.set("minPrice", preset.min) : params.delete("minPrice");
-                preset.max ? params.set("maxPrice", preset.max) : params.delete("maxPrice");
+                if (preset.min) params.set("minPrice", preset.min);
+                else params.delete("minPrice");
+                if (preset.max) params.set("maxPrice", preset.max);
+                else params.delete("maxPrice");
                 params.delete("page");
                 router.push(`${pathname}?${params.toString()}`);
               }}

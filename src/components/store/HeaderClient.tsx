@@ -36,11 +36,14 @@ export default function HeaderClient({
   const [query, setQuery] = useState("");
   const accountRef = useRef<HTMLDivElement>(null);
 
-  // Any navigation should dismiss transient menus.
-  useEffect(() => {
+  // Any navigation should dismiss transient menus. Adjusting state during
+  // render (rather than in an effect) avoids a wasted extra render pass.
+  const [lastPathname, setLastPathname] = useState(pathname);
+  if (pathname !== lastPathname) {
+    setLastPathname(pathname);
     setMobileOpen(false);
     setAccountOpen(false);
-  }, [pathname]);
+  }
 
   // Close the account dropdown on outside click or Escape.
   useEffect(() => {

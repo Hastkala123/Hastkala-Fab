@@ -45,7 +45,7 @@ export const passwordSchema = z
   .refine((v) => /\d/.test(v), "Include at least one number");
 
 /** Matches C0/C1 control characters, excluding tab (\\t), LF (\\n) and CR (\\r). */
-// eslint-disable-next-line no-control-regex
+ 
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/;
 
 /** Rejects control characters that break rendering or smuggle terminal escapes. */
@@ -55,7 +55,7 @@ export const safeText = (min: number, max: number, label = "This field") =>
     .trim()
     .min(min, `${label} must be at least ${min} characters`)
     .max(max, `${label} must be under ${max} characters`)
-    // eslint-disable-next-line no-control-regex
+     
     .refine((v) => !CONTROL_CHARS.test(v), {
       message: `${label} contains invalid characters`,
     });

@@ -1,8 +1,17 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { passwordSchema } from "../src/lib/validators";
 import { blockPrint, encodePng, PALETTE, type Rgb } from "./png.js";
+
+// `tsx` does not load .env on its own; Prisma only reads DATABASE_URL from it.
+try {
+  process.loadEnvFile(".env");
+} catch {
+  // No .env file: rely on the real environment (CI, production shell).
+}
 
 const db = new PrismaClient();
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
@@ -12,7 +21,27 @@ const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
  *
  * Idempotent: safe to re-run. Uses upserts keyed on natural unique columns so a
  * second run updates rather than duplicating.
+ *
+ * Credentials are never hard-coded. Admin accounts take their password from
+ * SEED_ADMIN_PASSWORD; an existing admin's password is never overwritten.
+ * Demo shopper accounts are created only outside production.
  */
+
+const isProduction = process.env.NODE_ENV === "production";
+
+function readSeedPassword(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(
+      `${name} is not set. Add a strong password for the seeded accounts to .env (see .env.example).`,
+    );
+  }
+  const result = passwordSchema.safeParse(value);
+  if (!result.success) {
+    throw new Error(`${name} is too weak: ${result.error.issues[0]?.message}`);
+  }
+  return value;
+}
 
 type ColourWay = { ground: Rgb; primary: Rgb; secondary: Rgb; accent: Rgb };
 
@@ -49,13 +78,13 @@ const COLOURWAYS: Record<string, ColourWay> = {
   },
 };
 
-const MOTIFS = ["buti", "floral", "jaal", "leaf", "stripe"] as const;
+type Motif = "buti" | "floral" | "jaal" | "leaf" | "stripe";
 
 let imageCounter = 0;
 
 async function makeImage(
   colourway: keyof typeof COLOURWAYS,
-  motif: (typeof MOTIFS)[number],
+  motif: Motif,
   width = 900,
   height = 1200,
 ): Promise<string> {
@@ -180,7 +209,7 @@ type ProductSeed = {
   keywords: string;
   featured?: boolean;
   colourway: keyof typeof COLOURWAYS;
-  motif: (typeof MOTIFS)[number];
+  motif: Motif;
   sizes?: string[];
   colours?: string[];
   soldCount?: number;
@@ -559,40 +588,18 @@ const FAQS = [
 
 // ---------------------------------------------------------------------------
 
-async function main() {
-  console.log("→ Seeding Hastkala Fab…");
-  await mkdir(UPLOAD_DIR, { recursive: true });
-
-  // --- Admins ------------------------------------------------------------
-  // These are development credentials. The console prints a reminder to change
-  // them; never deploy with these passwords in place.
-  const adminPassword = await bcrypt.hash("Hastkala@2026", 12);
-
-  const admins = [
-    {
-      email: "priyanshu@hastkalafab.com",
-      name: "Priyanshu Khandelwal",
-      role: "SUPERADMIN",
-    },
-    { email: "harsh@hastkalafab.com", name: "Harsh Khandelwal", role: "SUPERADMIN" },
-  ];
-
-  for (const admin of admins) {
-    await db.user.upsert({
-      where: { email: admin.email },
-      update: { name: admin.name, role: admin.role, isApproved: true },
-      create: {
-        ...admin,
-        passwordHash: adminPassword,
-        isApproved: true,
-        emailVerified: new Date(),
-      },
-    });
-  }
-  console.log(`  ✓ ${admins.length} admin accounts`);
-
-  // --- Demo customers ----------------------------------------------------
-  const customerPassword = await bcrypt.hash("Customer@2026", 12);
+/**
+ * Demo shopper + wholesale accounts for local testing. Never run in production.
+ * Returns the password used for newly created demo accounts.
+ */
+async function seedDemoAccounts(): Promise<string> {
+  // A random password is generated unless SEED_DEMO_PASSWORD is set, so no
+  // shared, guessable credential exists in any database.
+  const demoPassword =
+    process.env.SEED_DEMO_PASSWORD
+      ? readSeedPassword("SEED_DEMO_PASSWORD")
+      : `Demo-${randomBytes(9).toString("base64url")}9a`;
+  const customerPassword = await bcrypt.hash(demoPassword, 12);
   const customer = await db.user.upsert({
     where: { email: "demo@hastkalafab.com" },
     update: {},
@@ -640,6 +647,49 @@ async function main() {
       isDefault: true,
     },
   });
+
+  return demoPassword;
+}
+
+async function main() {
+  if (isProduction && process.env.SEED_ALLOW_PRODUCTION !== "true") {
+    throw new Error(
+      "Refusing to seed a production database. Set SEED_ALLOW_PRODUCTION=true if you really mean it.",
+    );
+  }
+
+  console.log("→ Seeding Hastkala Fab…");
+  await mkdir(UPLOAD_DIR, { recursive: true });
+
+  // --- Admins ------------------------------------------------------------
+  // Only used when an admin account does not exist yet.
+  const adminPassword = await bcrypt.hash(readSeedPassword("SEED_ADMIN_PASSWORD"), 12);
+
+  const admins = [
+    {
+      email: "priyanshu@hastkalafab.com",
+      name: "Priyanshu Khandelwal",
+      role: "SUPERADMIN",
+    },
+    { email: "harsh@hastkalafab.com", name: "Harsh Khandelwal", role: "SUPERADMIN" },
+  ];
+
+  for (const admin of admins) {
+    await db.user.upsert({
+      where: { email: admin.email },
+      update: { name: admin.name, role: admin.role, isApproved: true },
+      create: {
+        ...admin,
+        passwordHash: adminPassword,
+        isApproved: true,
+        emailVerified: new Date(),
+      },
+    });
+  }
+  console.log(`  ✓ ${admins.length} admin accounts`);
+
+  // --- Demo customers (development only) --------------------------------
+  const demoPassword = isProduction ? null : await seedDemoAccounts();
 
   // --- Categories --------------------------------------------------------
   const categoryIds = new Map<string, string>();
@@ -736,7 +786,7 @@ async function main() {
       where: { productId: product.id },
     });
     if (existingImages === 0) {
-      const variantMotifs: (typeof MOTIFS)[number][] = [
+      const variantMotifs: Motif[] = [
         seed.motif,
         seed.motif === "buti" ? "floral" : "buti",
         "jaal",
@@ -849,11 +899,16 @@ async function main() {
   console.log(`  ✓ ${coupons.length} coupons`);
 
   console.log("\n✅ Seed complete.\n");
-  console.log("   Admin login   : priyanshu@hastkalafab.com / Hastkala@2026");
-  console.log("                 : harsh@hastkalafab.com     / Hastkala@2026");
-  console.log("   Customer      : demo@hastkalafab.com      / Customer@2026");
-  console.log("   Wholesale     : wholesale@hastkalafab.com / Customer@2026");
-  console.log("\n   ⚠  Change every one of these passwords before going live.\n");
+  console.log(`   Admin login   : ${admins.map((a) => a.email).join(", ")}`);
+  console.log("                   password = SEED_ADMIN_PASSWORD (new accounts only)");
+  if (demoPassword) {
+    console.log("   Demo accounts : demo@hastkalafab.com, wholesale@hastkalafab.com");
+    console.log(
+      process.env.SEED_DEMO_PASSWORD
+        ? "                   password = SEED_DEMO_PASSWORD (new accounts only)"
+        : `                   password = ${demoPassword} (generated for this run, new accounts only)`,
+    );
+  }
 }
 
 main()

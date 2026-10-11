@@ -15,7 +15,8 @@ export default async function AdminDashboard() {
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
   const [
     revenue,

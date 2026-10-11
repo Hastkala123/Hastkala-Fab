@@ -136,11 +136,20 @@ export async function guard(
 }
 
 /**
+ * The second argument Next.js passes to every route handler. Params are
+ * `unknown` so one wrapper type-checks for static and dynamic routes alike; a
+ * dynamic route must validate its params with Zod before using them.
+ */
+export type RouteContext = { params: Promise<unknown> };
+
+/**
  * Wraps a handler so an unexpected throw becomes a generic 500 instead of
  * leaking a stack trace, SQL fragment or file path to the client.
  */
-export function handler(fn: (request: Request, context: never) => Promise<NextResponse>) {
-  return async (request: Request, context: never): Promise<NextResponse> => {
+export function handler(
+  fn: (request: Request, context: RouteContext) => Promise<NextResponse>,
+) {
+  return async (request: Request, context: RouteContext): Promise<NextResponse> => {
     try {
       return await fn(request, context);
     } catch (error) {
