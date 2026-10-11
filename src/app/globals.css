@@ -1,0 +1,315 @@
+@import "tailwindcss";
+
+/*
+  Hastkala Fab design system.
+
+  The palette is drawn from the Sanganeri block-print tradition itself:
+  indigo (neel) from the vat dye, madder red (aal) from the root, turmeric
+  gold, and the undyed cotton cream the prints are laid onto. Using the
+  craft's own colours makes the storefront feel like the product rather than
+  a generic template wrapped around it.
+*/
+
+@theme {
+  /* Indigo — primary brand */
+  --color-indigo-ink-50: #f0f4f9;
+  --color-indigo-ink-100: #dbe5f0;
+  --color-indigo-ink-200: #bccfe3;
+  --color-indigo-ink-300: #90b0ce;
+  --color-indigo-ink-400: #5d88b4;
+  --color-indigo-ink-500: #3d6b9c;
+  --color-indigo-ink-600: #2d5480;
+  --color-indigo-ink-700: #264468;
+  --color-indigo-ink-800: #1e3a5f;
+  --color-indigo-ink-900: #16283f;
+  --color-indigo-ink-950: #0e1a2b;
+
+  /* Madder red — accent, sale badges, CTAs */
+  --color-madder-50: #fdf4f2;
+  --color-madder-100: #fbe6e1;
+  --color-madder-200: #f7d0c8;
+  --color-madder-300: #efaea1;
+  --color-madder-400: #e2806c;
+  --color-madder-500: #d05a43;
+  --color-madder-600: #b34733;
+  --color-madder-700: #963a2a;
+  --color-madder-800: #7c3226;
+  --color-madder-900: #682d23;
+
+  /* Turmeric gold — highlights, ratings, premium accents */
+  --color-turmeric-50: #fdf9ed;
+  --color-turmeric-100: #faf0cc;
+  --color-turmeric-200: #f4df95;
+  --color-turmeric-300: #eec95e;
+  --color-turmeric-400: #e5b23a;
+  --color-turmeric-500: #c9a227;
+  --color-turmeric-600: #a87d1e;
+  --color-turmeric-700: #865c1c;
+  --color-turmeric-800: #70491d;
+  --color-turmeric-900: #603d1c;
+
+  /* Undyed cotton — page grounds */
+  --color-cotton-50: #fdfbf7;
+  --color-cotton-100: #faf6ee;
+  --color-cotton-200: #f3ebdc;
+  --color-cotton-300: #e8dcc5;
+  --color-cotton-400: #d9c7a5;
+  --color-cotton-500: #c4ac83;
+
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --radius-card: 0.875rem;
+}
+
+@layer base {
+  :root {
+    --hf-bg: var(--color-cotton-50);
+    --hf-surface: #ffffff;
+    --hf-border: var(--color-cotton-300);
+    --hf-text: var(--color-indigo-ink-950);
+    --hf-muted: #5b6472;
+  }
+
+  * {
+    border-color: var(--hf-border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--hf-bg);
+    color: var(--hf-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+
+  /* Visible focus ring for keyboard users — never remove without replacement. */
+  :focus-visible {
+    outline: 2px solid var(--color-indigo-ink-600);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: var(--color-turmeric-200);
+    color: var(--color-indigo-ink-950);
+  }
+}
+
+@layer components {
+  .hf-container {
+    width: 100%;
+    max-width: 80rem;
+    margin-inline: auto;
+    padding-inline: 1rem;
+  }
+
+  @media (min-width: 640px) {
+    .hf-container { padding-inline: 1.5rem; }
+  }
+  @media (min-width: 1024px) {
+    .hf-container { padding-inline: 2rem; }
+  }
+
+  .hf-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.625rem;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    padding: 0.6875rem 1.25rem;
+    transition: background-color 150ms ease, color 150ms ease,
+                border-color 150ms ease, transform 100ms ease, box-shadow 150ms ease;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .hf-btn:active:not(:disabled) { transform: translateY(1px); }
+  .hf-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  .hf-btn-primary {
+    background-color: var(--color-indigo-ink-800);
+    color: #fff;
+    box-shadow: 0 1px 2px rgb(14 26 43 / 0.16);
+  }
+  .hf-btn-primary:hover:not(:disabled) { background-color: var(--color-indigo-ink-900); }
+
+  .hf-btn-accent {
+    background-color: var(--color-madder-600);
+    color: #fff;
+    box-shadow: 0 1px 2px rgb(122 50 38 / 0.2);
+  }
+  .hf-btn-accent:hover:not(:disabled) { background-color: var(--color-madder-700); }
+
+  .hf-btn-outline {
+    background-color: transparent;
+    color: var(--color-indigo-ink-800);
+    border: 1px solid var(--color-indigo-ink-300);
+  }
+  .hf-btn-outline:hover:not(:disabled) {
+    background-color: var(--color-indigo-ink-50);
+    border-color: var(--color-indigo-ink-500);
+  }
+
+  .hf-btn-ghost {
+    background-color: transparent;
+    color: var(--hf-muted);
+  }
+  .hf-btn-ghost:hover:not(:disabled) {
+    background-color: var(--color-cotton-200);
+    color: var(--hf-text);
+  }
+
+  .hf-input {
+    width: 100%;
+    border-radius: 0.625rem;
+    border: 1px solid var(--color-cotton-400);
+    background-color: #fff;
+    padding: 0.625rem 0.875rem;
+    font-size: 0.9375rem;
+    color: var(--hf-text);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .hf-input::placeholder { color: #98a2b3; }
+
+  .hf-input:focus {
+    outline: none;
+    border-color: var(--color-indigo-ink-600);
+    box-shadow: 0 0 0 3px rgb(45 84 128 / 0.14);
+  }
+
+  .hf-input[aria-invalid="true"] {
+    border-color: var(--color-madder-500);
+  }
+  .hf-input[aria-invalid="true"]:focus {
+    box-shadow: 0 0 0 3px rgb(208 90 67 / 0.16);
+  }
+
+  .hf-label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-indigo-ink-900);
+    margin-bottom: 0.375rem;
+  }
+
+  .hf-card {
+    background-color: var(--hf-surface);
+    border: 1px solid var(--color-cotton-300);
+    border-radius: var(--radius-card);
+  }
+
+  .hf-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 9999px;
+    padding: 0.1875rem 0.625rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    --tw-ring-inset: inset;
+    box-shadow: inset 0 0 0 1px currentColor;
+  }
+
+  .hf-link {
+    color: var(--color-indigo-ink-700);
+    text-underline-offset: 3px;
+  }
+  .hf-link:hover { text-decoration: underline; }
+
+  /*
+    Block-print motif used as a subtle section divider. Pure CSS so it costs
+    no extra request and scales crisply on any display.
+  */
+  .hf-motif {
+    height: 1.25rem;
+    background-image:
+      radial-gradient(circle at 50% 50%, var(--color-indigo-ink-300) 1.5px, transparent 1.6px),
+      radial-gradient(circle at 50% 50%, var(--color-madder-300) 1.5px, transparent 1.6px);
+    background-size: 24px 24px, 24px 24px;
+    background-position: 0 0, 12px 12px;
+    opacity: 0.5;
+  }
+
+  /* Skeleton shimmer used while product grids stream in. */
+  .hf-skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--color-cotton-200) 25%,
+      var(--color-cotton-100) 37%,
+      var(--color-cotton-200) 63%
+    );
+    background-size: 400% 100%;
+    animation: hf-shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes hf-shimmer {
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+  }
+
+  .hf-fade-up {
+    animation: hf-fade-up 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes hf-fade-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  /* Truncation helpers for product titles in grid cards. */
+  .hf-clamp-1, .hf-clamp-2, .hf-clamp-3 {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .hf-clamp-1 { -webkit-line-clamp: 1; }
+  .hf-clamp-2 { -webkit-line-clamp: 2; }
+  .hf-clamp-3 { -webkit-line-clamp: 3; }
+
+  /* Keyboard-only skip target for accessibility. */
+  .hf-skip {
+    position: absolute;
+    left: -9999px;
+    z-index: 100;
+    padding: 0.75rem 1.25rem;
+    background: var(--color-indigo-ink-800);
+    color: #fff;
+    border-radius: 0 0 0.5rem 0;
+  }
+  .hf-skip:focus { left: 0; top: 0; }
+}
+
+/* Respect users who have asked the OS to reduce motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Hide number-input spinners; quantity steppers provide their own controls. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] { -moz-appearance: textfield; }

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e ' *)",
+      "Bash(grep -rho -E \"MIDDLEWARE_FILENAME[^,;]{0,40}|PROXY_FILENAME[^,;]{0,40}\" node_modules/next/dist/lib/constants.js)",
+      "Bash(npm pkg *)",
+      "Bash(npx next *)",
+      "Bash(node -e \"const z=require\\('zlib'\\); console.log\\('crc32:', typeof z.crc32\\); console.log\\(z.crc32 ? z.crc32\\(Buffer.from\\('hello'\\)\\) : 'n/a'\\)\")",
+      "Bash(npx tsx *)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

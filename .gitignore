@@ -1,0 +1,26 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Secrets — never commit
+.env
+.env.local
+.env*.local
+
+# Local database
+*.db
+*.db-journal
+prisma/dev.db*
+
+# User-uploaded media
+public/uploads/*
+!public/uploads/.gitkeep
+
+.DS_Store
+*.pem
+npm-debug.log*
+yarn-error.log*
+next-env.d.ts
+tsconfig.tsbuildinfo
