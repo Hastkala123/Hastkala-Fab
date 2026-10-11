@@ -1,6 +1,6 @@
 # Phase 1: Architecture (summary for the owner)
 
-**Status:** finished, waiting for your approval before Phase 2 (building) starts.
+**Status:** finished and **approved on 11 Oct 2026**: all six recommended options below (new URLs, wholesale prices "+ GST", invoice on order confirmation, 30-minute payment window, Hindi after launch, services as listed).
 **Visual preview:** https://claude.ai/artifact/K3JzuooLvaRMZNCM6FiVcH (style guide, homepage, phone product page, admin "edit product" screen). It's private to your account. Use its Share menu if you want family or staff to see it.
 
 ## What's in this folder
