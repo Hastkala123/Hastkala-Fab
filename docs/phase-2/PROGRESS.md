@@ -138,6 +138,8 @@ Every footer link used to lead to a missing page. Now:
 
 ## Deploying to Vercel
 
+**Live since 12 Oct 2026:** https://hastkalafab.vercel.app (Vercel team `hastkala-fab`, project `hastkalafab`, deploys every push to `main`). Neon Postgres `hastkala-db` (free plan) and the functions both run in Singapore (`sin1`, set in `vercel.json`), the closest region to India that Neon offers. The database was migrated and seeded with `NODE_ENV=production` (owners, categories, tax placeholders, pages; FAQs hidden until reviewed).
+
 - `npm run vercel-build` runs `prisma migrate deploy` then `next build`; `postinstall` generates the Prisma client.
 - Environment variables: `DATABASE_URL` (hosted PostgreSQL), `AUTH_SECRET` (32+ random characters), `IP_HASH_SALT` (16+), `NEXT_PUBLIC_SITE_URL` (the site's address), `CRON_SECRET` (32+); later `RAZORPAY_*`.
 - **Background work:** Vercel Hobby runs cron only once a day, so call `/api/cron/jobs` every minute from an outside scheduler (e.g. cron-job.org) with `Authorization: Bearer $CRON_SECRET`, or use Vercel Pro.
