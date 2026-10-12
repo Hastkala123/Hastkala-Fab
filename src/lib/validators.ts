@@ -512,3 +512,31 @@ export type ProductInput = z.output<typeof productSchema>;
 export type AddressInput = z.output<typeof addressSchema>;
 export type CategoryInput = z.output<typeof categorySchema>;
 export type CouponInput = z.output<typeof couponSchema>;
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+export const orderNumberSchema = z.string().trim().regex(/^HF-\d{6,9}$/, "Invalid order number");
+const gatewayOrderId = z.string().regex(/^order_[A-Za-z0-9]{6,40}$/, "Invalid payment reference");
+
+export const paymentOrderSchema = z.object({ orderNumber: orderNumberSchema });
+
+export const verifyPaymentSchema = z.object({
+  orderNumber: orderNumberSchema,
+  providerOrderId: gatewayOrderId,
+  providerPaymentId: z.string().regex(/^pay_[A-Za-z0-9]{6,40}$/, "Invalid payment reference"),
+  signature: z.string().regex(/^[a-f0-9]{64}$/i, "Invalid signature"),
+});
+
+export const testPaymentSchema = z.object({
+  orderNumber: orderNumberSchema,
+  providerOrderId: gatewayOrderId,
+  outcome: z.enum(["captured", "failed"]),
+});
+
+export const adminPaymentActionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("sync"), orderId: z.string().min(1).max(40) }),
+  z.object({ action: z.literal("resolve"), paymentId: z.string().min(1).max(40), note: z.string().trim().max(300).nullish() }),
+  z.object({ action: z.literal("retry-refund"), refundId: z.string().min(1).max(40) }),
+]);

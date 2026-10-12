@@ -107,8 +107,9 @@ export const SETTING_SECTIONS: SettingSection[] = [
   {
     key: "checkout",
     title: "Checkout",
-    description: "Payment window, gift wrap and quantity limits.",
+    description: "Online payment, payment window, gift wrap and quantity limits.",
     fields: [
+      { name: "onlinePaymentsEnabled", label: "Accept online payment (UPI, cards, net banking)", kind: "bool", hint: "Switch off during a payment-gateway outage; shoppers can still choose cash on delivery." },
       { name: "paymentWindowMinutes", label: "Hold stock for unpaid online orders (minutes)", kind: "int" },
       { name: "giftWrapEnabled", label: "Offer gift wrap", kind: "bool" },
       { name: "giftWrapFee", label: "Gift wrap charge (₹)", kind: "money" },

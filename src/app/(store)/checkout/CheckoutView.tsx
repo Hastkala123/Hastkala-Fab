@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import type { CartDisplay } from "@/lib/cart-types";
 import AddressForm, { type AddressValues } from "@/components/store/AddressForm";
 import { FormError } from "@/components/ui/Field";
+import { useFinishPayment, usePayment } from "@/components/payments/usePayment";
 import { OrderTotals } from "../cart/CartView";
 
 const PAYMENT_METHODS = [
@@ -28,10 +29,13 @@ export default function CheckoutView({
   online,
   cod,
   addresses,
+  onlineAvailable,
 }: {
   online: CartDisplay;
   cod: CartDisplay;
   addresses: AddressValues[];
+  /** False when no gateway is set up or the owner switched online payment off. */
+  onlineAvailable: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -40,7 +44,9 @@ export default function CheckoutView({
     addresses.find((a) => a.isDefault)?.id ?? addresses[0]?.id ?? null,
   );
   const [showAddressForm, setShowAddressForm] = useState(addresses.length === 0);
-  const [paymentMethod, setPaymentMethod] = useState<Method>("UPI");
+  const [paymentMethod, setPaymentMethod] = useState<Method>(onlineAvailable ? "UPI" : "COD");
+  const { pay, dialog } = usePayment();
+  const finishPayment = useFinishPayment("checkout");
   const [note, setNote] = useState("");
   const [placing, setPlacing] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -69,8 +75,14 @@ export default function CheckoutView({
       router.refresh();
       return;
     }
+    const { orderNumber, status } = result.data;
+    if (status === "PENDING_PAYMENT") {
+      // The order holds the stock; now take the payment.
+      await finishPayment(orderNumber, await pay(orderNumber));
+      return;
+    }
     toast("Order placed", "success");
-    router.replace(orderThankYouPath(result.data.orderNumber));
+    router.replace(orderThankYouPath(orderNumber));
     router.refresh();
   }
 
@@ -150,7 +162,7 @@ export default function CheckoutView({
 
           <ul className="mt-4 space-y-2.5">
             {PAYMENT_METHODS.map((method) => {
-              const disabled = method.value === "COD" && !cod.cod.available;
+              const disabled = method.value === "COD" ? !cod.cod.available : !onlineAvailable;
               return (
                 <li key={method.value}>
                   <label
@@ -175,7 +187,9 @@ export default function CheckoutView({
                       <p className="font-semibold text-indigo-ink-900">{method.label}</p>
                       <p className="text-xs text-slate-500">
                         {disabled
-                          ? cod.cod.reason
+                          ? method.value === "COD"
+                            ? cod.cod.reason
+                            : "Online payment is unavailable right now"
                           : method.value === "COD" && cod.codFee > 0
                             ? `${method.detail} · ${formatPrice(cod.codFee)} fee`
                             : method.detail}
@@ -265,11 +279,16 @@ export default function CheckoutView({
           <button
             type="button"
             onClick={placeOrder}
-            disabled={placing || !addressId || blocked}
+            disabled={placing || !addressId || blocked || (paymentMethod === "COD" ? !cod.cod.available : !onlineAvailable)}
             className="hf-btn hf-btn-accent mt-3 w-full py-3"
           >
-            {placing ? "Placing your order…" : `Place order · ${formatPrice(cart.grandTotal)}`}
+            {placing
+              ? "Placing your order…"
+              : paymentMethod === "COD"
+                ? `Place order · ${formatPrice(cart.grandTotal)}`
+                : `Place order and pay · ${formatPrice(cart.grandTotal)}`}
           </button>
+          {dialog}
 
           <p className="mt-3 text-center text-xs leading-relaxed text-slate-500">
             By placing this order you agree to our{" "}

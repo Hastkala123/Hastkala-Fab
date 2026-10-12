@@ -7,6 +7,7 @@ import { istStartOfDay, istDateString } from "@/lib/time";
 import { requireStaffPage } from "@/server/auth/page-guard";
 import { SETTING_KEYS, SETTING_LABELS } from "@/server/settings/schema";
 import { getSettings } from "@/server/settings";
+import { gatewayStatus } from "@/server/payments/gateway";
 
 export const metadata: Metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
@@ -36,6 +37,8 @@ export default async function AdminDashboard() {
     recentOrders,
     topProducts,
     settings,
+    paymentFlags,
+    failedRefunds,
   ] = await Promise.all([
     db.order.aggregate({ where: { status: { notIn: [...SOLD.notIn] } }, _sum: { grandTotal: true }, _count: { id: true } }),
     db.order.aggregate({
@@ -70,12 +73,35 @@ export default async function AdminDashboard() {
       take: 5,
     }),
     getSettings(),
+    db.payment.count({ where: { attentionAt: { not: null } } }),
+    db.refund.count({ where: { status: "FAILED" } }),
   ]);
   const lowStock = lowStockRows;
+  const gateway = gatewayStatus();
   const pendingOrders = toDispatch;
   const unsavedSettings = SETTING_KEYS.filter((key) => !settings._saved.has(key));
 
   const actionItems = [
+    paymentFlags > 0 && {
+      label: `${paymentFlags} payment${paymentFlags === 1 ? "" : "s"} need${paymentFlags === 1 ? "s" : ""} a look`,
+      href: "/admin/payments",
+    },
+    failedRefunds > 0 && {
+      label: `${failedRefunds} refund${failedRefunds === 1 ? "" : "s"} failed — retry or refund by hand`,
+      href: "/admin/payments",
+    },
+    gateway.mode === "off" && {
+      label: "Online payment is off: add the Razorpay keys to take UPI, card and net banking",
+      href: "/admin/payments",
+    },
+    gateway.mode === "stand-in" && {
+      label: "Online payments use the built-in test gateway — add Razorpay keys before launch",
+      href: "/admin/payments",
+    },
+    "webhooks" in gateway && !gateway.webhooks && {
+      label: "Razorpay webhook secret missing — set RAZORPAY_WEBHOOK_SECRET",
+      href: "/admin/payments",
+    },
     pendingOrders > 0 && {
       label: `${pendingOrders} order${pendingOrders === 1 ? "" : "s"} awaiting dispatch`,
       href: "/admin/orders?status=CONFIRMED",

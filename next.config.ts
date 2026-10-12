@@ -21,7 +21,8 @@ const securityHeaders = [
     key: "Permissions-Policy",
     value: "camera=(), microphone=(), geolocation=(), interest-cohort=()",
   },
-  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  // "allow-popups": Razorpay opens bank / 3-D Secure pages in a popup that must report back.
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
   { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
   {
     key: "Content-Security-Policy",
@@ -29,12 +30,14 @@ const securityHeaders = [
       "default-src 'self'",
       // Next.js injects inline bootstrap scripts; style-src needs inline for
       // Tailwind's runtime-injected critical CSS.
-      "script-src 'self' 'unsafe-inline'" +
+      // Razorpay Checkout is the only third-party script.
+      "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com" +
         (process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""),
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
-      "img-src 'self' data: blob:",
-      "connect-src 'self'",
+      "img-src 'self' data: blob: https://*.razorpay.com",
+      "connect-src 'self' https://*.razorpay.com",
+      "frame-src https://api.razorpay.com https://checkout.razorpay.com",
       "form-action 'self'",
       "frame-ancestors 'none'",
       "base-uri 'self'",

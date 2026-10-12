@@ -10,6 +10,7 @@ import { UserError } from "@/server/errors";
 import { takeStock } from "@/server/inventory/stock";
 import { formatOrderNumber } from "@/server/numbering/format";
 import { nextSequence } from "@/server/numbering/sequence";
+import { activeGateway } from "@/server/payments/gateway";
 import { getSettings } from "@/server/settings";
 import { priceItems } from "./pricing";
 
@@ -24,6 +25,11 @@ export type PlaceOrderInput = {
 export type PlacedOrder = { orderNumber: string; status: "CONFIRMED" | "PENDING_PAYMENT"; reused: boolean };
 
 const ONLINE_METHODS: PaymentMethod[] = ["UPI", "CARD", "NETBANKING", "WALLET"];
+
+/** A gateway is configured and the owner hasn't switched online payment off. */
+export function onlinePaymentAvailable(settings: { checkout: { onlinePaymentsEnabled: boolean } }): boolean {
+  return settings.checkout.onlinePaymentsEnabled && activeGateway() !== null;
+}
 
 /**
  * Turns the shopper's bag into an order, all or nothing.
@@ -40,6 +46,9 @@ export async function placeOrder(user: SessionUser, input: PlaceOrderInput): Pro
     throw new UserError("Please choose how you'd like to pay.");
   }
   const [settings, viewer] = await Promise.all([getSettings(), viewerFor(user)]);
+  if (!isCod && !onlinePaymentAvailable(settings)) {
+    throw new UserError("Online payment isn't available right now. Please choose cash on delivery or try again later.", 409);
+  }
 
   try {
     return await db.$transaction(
@@ -111,7 +120,7 @@ export async function placeOrder(user: SessionUser, input: PlaceOrderInput): Pro
         let couponId: string | null = null;
         if (quote.coupon) {
           const claimed = await tx.$queryRaw<{ id: string }[]>`
-            UPDATE "Coupon" SET "usedCount" = "usedCount" + 1, "updatedAt" = now()
+            UPDATE "Coupon" SET "usedCount" = "usedCount" + 1, "updatedAt" = timezone('utc', now())
              WHERE "code" = ${quote.coupon.code} AND "isActive" = true
                AND ("usageLimit" IS NULL OR "usedCount" < "usageLimit")
             RETURNING "id"`;

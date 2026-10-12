@@ -8,6 +8,9 @@ import { formatDateTime, PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS } from "@/
 import { getSettings } from "@/server/settings";
 import AddressBlock from "@/components/orders/AddressBlock";
 import OrderTotals from "@/components/orders/OrderTotals";
+import PayNowButton from "@/components/payments/PayNowButton";
+import PaymentConfirming from "@/components/payments/PaymentConfirming";
+import { expireOrderIfDue } from "@/server/payments/expiry";
 
 export const metadata: Metadata = {
   title: "Thank you for your order",
@@ -16,17 +19,27 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function ThankYouPage({ params }: { params: Promise<{ orderNumber: string }> }) {
+export default async function ThankYouPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ orderNumber: string }>;
+  searchParams: Promise<{ confirming?: string }>;
+}) {
   const { orderNumber } = await params;
+  const { confirming } = await searchParams;
   const user = await getCurrentUser();
   if (!user) redirect(`/login?next=${encodeURIComponent(`/order/${orderNumber}/thank-you`)}`);
 
   // Scoped to the signed-in shopper: an order number alone never reveals an order.
+  const found = await db.order.findFirst({ where: { orderNumber, userId: user.id }, select: { id: true } });
+  if (!found) notFound();
+  // A window that ended while nobody was looking: settle it now, not at the next scheduler run.
+  await expireOrderIfDue(found.id).catch(() => false);
   const [order, settings] = await Promise.all([
-    db.order.findFirst({ where: { orderNumber, userId: user.id }, include: { items: true } }),
+    db.order.findUniqueOrThrow({ where: { id: found.id }, include: { items: true } }),
     getSettings(),
   ]);
-  if (!order) notFound();
 
   const awaitingPayment = order.status === "PENDING_PAYMENT" || order.status === "PAYMENT_FAILED";
   const cancelled = order.status === "CANCELLED";
@@ -49,7 +62,11 @@ export default async function ThankYouPage({ params }: { params: Promise<{ order
           </h1>
           <p className="mt-2 text-slate-600">
             {cancelled
-              ? "Nothing has been charged for the items that were cancelled."
+              ? order.amountPaid > 0
+                ? "Any payment taken for this order is being refunded to your original payment method."
+                : order.cancelReason === "Payment not completed in time"
+                  ? "The payment wasn't completed in time, so the items were released. Nothing was charged."
+                  : "Nothing has been charged for the items that were cancelled."
               : awaitingPayment
                 ? order.paymentDueBy
                   ? `We're holding your items until ${formatDateTime(order.paymentDueBy)}. Complete the payment to confirm the order.`
@@ -57,6 +74,25 @@ export default async function ThankYouPage({ params }: { params: Promise<{ order
                 : `Your order is confirmed. ${settings.shipping.dispatchText.replace(/\.$/, "")}.`}
           </p>
         </div>
+
+        {awaitingPayment && (
+          <div className="mt-6 flex flex-col items-center gap-3">
+            {confirming ? (
+              <PaymentConfirming orderNumber={order.orderNumber} />
+            ) : order.status === "PAYMENT_FAILED" ? (
+              <p className="rounded-lg bg-madder-50 px-4 py-3 text-sm text-madder-800">
+                The last payment attempt didn&apos;t go through. No money was taken — you can try again.
+              </p>
+            ) : null}
+            {order.paymentDueBy && (
+              <PayNowButton
+                orderNumber={order.orderNumber}
+                amount={order.grandTotal - order.amountPaid}
+                dueBy={order.paymentDueBy.toISOString()}
+              />
+            )}
+          </div>
+        )}
 
         <div className="hf-card mt-8 overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-cotton-300 bg-cotton-100 px-5 py-4">

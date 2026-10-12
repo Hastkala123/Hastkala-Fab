@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { getCartView, toCartDisplay } from "@/server/cart";
+import { onlinePaymentAvailable } from "@/server/orders/checkout";
+import { getSettings } from "@/server/settings";
 import CheckoutView from "./CheckoutView";
 import { EmptyState } from "@/components/store/ProductGrid";
 
@@ -21,13 +23,14 @@ export default async function CheckoutPage() {
   if (!user) redirect("/login?next=/checkout");
 
   // Totals for each way of paying (COD may add a fee), computed on the server.
-  const [online, cod, addresses] = await Promise.all([
+  const [online, cod, addresses, settings] = await Promise.all([
     getCartView({ paymentMethod: "ONLINE" }).then(toCartDisplay),
     getCartView({ paymentMethod: "COD" }).then(toCartDisplay),
     db.address.findMany({
       where: { userId: user.id },
       orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
     }),
+    getSettings(),
   ]);
 
   if (online.lines.length === 0) {
@@ -54,6 +57,7 @@ export default async function CheckoutPage() {
       <CheckoutView
         online={online}
         cod={cod}
+        onlineAvailable={onlinePaymentAvailable(settings)}
         addresses={addresses.map((a) => ({
           id: a.id,
           fullName: a.fullName,

@@ -50,6 +50,30 @@ export const PAYMENT_STATUS_LABELS: Record<string, string> = {
   FAILED: "Failed",
 };
 
+export const REFUND_STATUS_LABELS: Record<string, string> = {
+  INITIATED: "Started",
+  PROCESSING: "In progress",
+  COMPLETED: "Sent to your bank",
+  FAILED: "Being retried by our team",
+};
+
+export const PAYMENT_ATTEMPT_LABELS: Record<string, string> = {
+  CREATED: "Opened",
+  AUTHORIZED: "Authorised",
+  CAPTURED: "Paid",
+  FAILED: "Failed",
+  PARTIALLY_REFUNDED: "Part refunded",
+  REFUNDED: "Refunded",
+};
+
+/** Refund states as staff see them. */
+export const REFUND_STAFF_LABELS: Record<string, string> = {
+  INITIATED: "Queued for the gateway",
+  PROCESSING: "Processing at the gateway",
+  COMPLETED: "Processed",
+  FAILED: "Failed",
+};
+
 export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   UPI: "UPI",
   CARD: "Card",
@@ -135,3 +159,13 @@ export function pageRange(current: number, total: number): (number | "…")[] {
 
 /** States and union territories, A–Z, for address forms. */
 export const INDIAN_STATES = Object.keys(STATE_NAME_TO_CODE).sort((a, b) => a.localeCompare(b));
+
+/** Badge colours for one payment attempt (keys overlap with order statuses, so kept apart). */
+export const PAYMENT_ATTEMPT_STYLES: Record<string, string> = {
+  CREATED: DONE,
+  AUTHORIZED: WAIT,
+  CAPTURED: GOOD,
+  FAILED: BAD,
+  PARTIALLY_REFUNDED: WAIT,
+  REFUNDED: DONE,
+};

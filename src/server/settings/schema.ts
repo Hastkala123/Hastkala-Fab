@@ -77,6 +77,8 @@ export const SETTING_SCHEMAS = {
   }),
 
   checkout: z.object({
+    /** Switch off to stop taking UPI / card / net banking (for example during a gateway outage). */
+    onlinePaymentsEnabled: z.boolean().default(true),
     /** Owner's decision: unpaid online orders release stock after 30 min. */
     paymentWindowMinutes: z.number().int().min(5).max(24 * 60).default(30),
     giftWrapEnabled: z.boolean().default(false),

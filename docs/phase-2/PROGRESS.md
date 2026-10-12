@@ -5,7 +5,7 @@ Each milestone ends with typecheck + lint + tests + production build passing, th
 | # | Milestone | Status |
 |---|---|---|
 | M1 | **Foundation:** PostgreSQL + new schema, GST/pricing/coupon/state-machine engines with tests, settings, seed, existing features ported, new URLs | ✅ Done (12 Oct 2026) |
-| M2 | Payments: Razorpay (+ dev test gateway), webhooks, payment retry, expiry job, reconciliation | ⏳ |
+| M2 | Payments: Razorpay (+ dev test gateway), webhooks, payment retry, expiry job, reconciliation | ✅ Done (12 Oct 2026) |
 | M3 | GST invoices + credit notes (PDF), GSTR-1 export | ⏳ |
 | M4 | Shipping: Shiprocket (+ manual mode), labels, tracking timeline, public `/track`, NDR/RTO | ⏳ |
 | M5 | Returns, exchanges, refunds, store credit | ⏳ |
@@ -20,6 +20,9 @@ Each milestone ends with typecheck + lint + tests + production build passing, th
 - **Rate limiting uses PostgreSQL** (an atomic `INSERT … ON CONFLICT … RETURNING` counter) instead of Redis. One fewer paid service, and it fixes the race in H9. Redis can be swapped in later behind the same interface.
 - **Every outside service sits behind an interface with a development stand-in:** a test payment gateway, manual shipping, notifications written to the log, files saved to `./storage`. The site is fully usable and testable before any keys exist, and the stand-ins are blocked in production.
 - **Uploaded files are served by a route handler** (`/media/…`) instead of `public/`, so they work after deployment (fixes C5). Cloudinary/S3 plugs in later.
+- **The browser's "payment succeeded" is checked with the gateway, not trusted.** The doc said only the webhook marks an order paid. In practice webhooks can't reach a laptop, and they're sometimes late, so after the payment window closes our server verifies the signature and then asks Razorpay itself for the payment. The browser never decides; the gateway's own record does, through the same idempotent code the webhook uses.
+- **Background work without a new service:** the `Job` table plus `/api/cron/jobs` (Vercel Cron, `CRON_SECRET`), or a timer inside the web server (on in development, `IN_PROCESS_SCHEDULER=true` for one-server hosting). Jobs are claimed with `FOR UPDATE SKIP LOCKED`, retried with back-off, and given up on with a clear failure.
+- **Times in raw SQL are always UTC** (`timezone('utc', now())`). Prisma stores UTC in its date columns, while plain `now()`, and dates passed into raw SQL, follow the database's time zone. On a database set to IST, rate limits never reset the window properly, and jobs ran 5½ hours early. Found by the M2 tests; the local test database stays on IST on purpose so this can't come back unnoticed.
 - **Local development database:** PostgreSQL 16 from Homebrew, kept inside the project in `./.pgdata` on port 5433. Run `npm run db:start` / `npm run db:stop`.
 
 ## M1 — what was built
@@ -53,7 +56,37 @@ Each milestone ends with typecheck + lint + tests + production build passing, th
 Run them with `npm run db:start` then `npm test` (83 tests: 71 unit, 12 integration).
 
 **Known limits until later milestones**
-- Online payment (UPI/card/net banking) records the order as "awaiting payment"; the payment gateway and the automatic release of unpaid stock arrive in **M2**.
+- ~~Online payment records the order as "awaiting payment"~~ — done in M2.
 - Tracking numbers are written in the order note until courier integration in **M4**.
 - Newsletter sign-ups stay "pending" until confirmation emails exist (**M6**). COD phone verification arrives with OTP in **M7**.
 - Home page sections, info pages and legal pages are built in **M9/M10**. Some home page wording (history claims) still needs the owner's confirmation.
+
+## M2 — what was built
+
+**For shoppers**
+- UPI, card and net banking through Razorpay Checkout. "Place order and pay" opens the payment window straight away; the stock is held while they pay.
+- Payment failed or window closed? The order page and thank-you page show **Pay now** with a countdown of how long the items are held. Retries reuse the same Razorpay order, so Razorpay itself refuses a second successful payment.
+- If the bank is slow, the thank-you page says "Confirming your payment…" and updates by itself.
+- Unpaid orders are cancelled when the window ends (owner's setting, 30 minutes, plus 3 minutes' grace), and the stock and the coupon are given back. Before cancelling, the shop asks Razorpay once more, in case the payment went through and its message was lost.
+- **Automatic refunds** to the original payment method when a paid order is cancelled, when a payment arrives after the order expired, or when someone pays twice. The order page shows each refund (RFD-100001…) and its progress.
+
+**For staff**
+- Order page: every payment attempt (method, failure reason, Razorpay ids), refunds, **Check with gateway**, **Retry refund**.
+- **Admin → Payments**: anything needing a look (amount mismatch, double payment, refund failed, customer dispute), refunds in progress, failed webhooks, all attempts. The dashboard shows the count, and warns while Razorpay isn't set up.
+- **Settings → Checkout → Accept online payment** switches UPI/cards off during a gateway outage (COD still works).
+
+**Safety, proven by tests (32 integration, 83 unit, 115 total)**
+- Webhook signature checked on the raw body; a forged one is refused and nothing is stored. The same event delivered twice, or the same payment reported by webhook, browser and reconciliation, is counted once.
+- A payment and the expiry racing each other always end consistent: confirmed with the stock taken, or cancelled with the stock back and the money refunded.
+- A missed webhook doesn't cancel a paid order. A late payment is refunded in full.
+- Refunds can never add up to more than was paid. A refund the gateway rejects is released and flagged; a temporary failure is retried with back-off; a refund made in the Razorpay dashboard is added to our books.
+- Every hour the shop compares the last 3 days of payments with Razorpay and flags any mismatch.
+
+**Going live with Razorpay (owner)**
+1. Finish Razorpay KYC (needs the legal pages from M10 live).
+2. Dashboard → API keys: put `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` in the server's environment (test keys first: `rzp_test_…`).
+3. Dashboard → Webhooks: add `https://<domain>/api/webhooks/razorpay` with events `payment.authorized`, `payment.captured`, `payment.failed`, `order.paid`, `refund.processed`, `refund.failed`, `payment.dispute.created`, and the same secret as `RAZORPAY_WEBHOOK_SECRET`.
+4. Set `CRON_SECRET` and schedule `/api/cron/jobs` every minute (Vercel Cron), or set `IN_PROCESS_SCHEDULER=true` on a single server.
+5. Place a test order with Razorpay's test UPI id / test card, cancel it, and check the refund appears in Admin → Payments.
+
+Until the keys are set, development uses a built-in **test gateway** (Pay / Make it fail / Close buttons, no real money). It sends the same signed messages Razorpay does, and production never uses it: online payment stays switched off there until the keys exist.

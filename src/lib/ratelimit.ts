@@ -26,15 +26,16 @@ export async function rateLimit(
   windowSeconds: number,
 ): Promise<RateLimitResult> {
   const key = sha256(`${env.IP_HASH_SALT}:${bucket}:${identifier}`);
-  const windowEnd = new Date(Date.now() + windowSeconds * 1000);
 
+  // Times are computed in SQL, in UTC: a JS Date passed into raw SQL would be
+  // shifted by the database session's time zone.
   const rows = await db.$queryRaw<{ count: number; expiresAt: Date }[]>`
     INSERT INTO "RateLimitBucket" ("key", "count", "expiresAt")
-    VALUES (${key}, 1, ${windowEnd})
+    VALUES (${key}, 1, timezone('utc', now()) + make_interval(secs => ${windowSeconds}))
     ON CONFLICT ("key") DO UPDATE SET
-      "count" = CASE WHEN "RateLimitBucket"."expiresAt" <= now() THEN 1
+      "count" = CASE WHEN "RateLimitBucket"."expiresAt" <= timezone('utc', now()) THEN 1
                      ELSE "RateLimitBucket"."count" + 1 END,
-      "expiresAt" = CASE WHEN "RateLimitBucket"."expiresAt" <= now() THEN EXCLUDED."expiresAt"
+      "expiresAt" = CASE WHEN "RateLimitBucket"."expiresAt" <= timezone('utc', now()) THEN EXCLUDED."expiresAt"
                          ELSE "RateLimitBucket"."expiresAt" END
     RETURNING "count", "expiresAt"`;
 
@@ -83,6 +84,7 @@ export const RATE_LIMITS = {
   signup: { limit: 5, window: 60 * 60 },
   passwordChange: { limit: 5, window: 60 * 60 },
   checkout: { limit: 20, window: 60 * 60 },
+  payment: { limit: 40, window: 10 * 60 },
   coupon: { limit: 20, window: 10 * 60 },
   review: { limit: 5, window: 60 * 60 },
   ticket: { limit: 5, window: 60 * 60 },

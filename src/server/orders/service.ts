@@ -7,6 +7,8 @@ import type { SessionUser } from "@/lib/auth";
 import { formatPrice } from "@/lib/money";
 import { NotFoundError, UserError } from "@/server/errors";
 import { putBackStock } from "@/server/inventory/stock";
+import { kickJobs } from "@/server/jobs/kick";
+import { refundOrderBalanceTx } from "@/server/payments/refunds";
 import { assertOrderTransition, CUSTOMER_CANCELLABLE, TransitionError, type Actor } from "./transitions";
 
 export type OrderActor = { type: Actor; user: SessionUser | null };
@@ -26,7 +28,8 @@ export type ChangeStatusOptions = {
  * The only way an order's status changes. Checks the move is allowed for this
  * actor, applies it with compare-and-set (two staff clicking at once can't both
  * apply it), and does what the move implies: stock back on cancellation and
- * return-to-origin, coupon released, cash collected on COD delivery.
+ * return-to-origin, coupon released, money refunded, cash collected on COD
+ * delivery.
  */
 export async function changeOrderStatus(
   orderId: string,
@@ -34,85 +37,11 @@ export async function changeOrderStatus(
   actor: OrderActor,
   options: ChangeStatusOptions = {},
 ): Promise<void> {
-  const result = await db.$transaction(async (tx) => {
-    const order = await tx.order.findUnique({
-      where: { id: orderId },
-      include: { items: true, couponRedemption: true },
-    });
-    if (!order) throw new NotFoundError("Order not found");
-
-    const from = order.status;
-    if (options.expectedFrom && options.expectedFrom !== from) {
-      throw new TransitionError(from, to, "This order was just updated by someone else. Refresh to see the latest.");
-    }
-    assertOrderTransition(from, to, actor.type);
-
-    const now = new Date();
-    const data: Prisma.OrderUpdateManyMutationInput = { status: to };
-    const notes: string[] = [];
-    if (options.note) notes.push(options.note);
-
-    if (to === "CONFIRMED") data.confirmedAt = now;
-
-    if (to === "DELIVERED") {
-      data.deliveredAt = now;
-      if (order.paymentMethod === "COD" && order.amountPaid < order.grandTotal) {
-        data.amountPaid = order.grandTotal;
-        data.paymentStatus = "PAID";
-      }
-    }
-
-    if (to === "CANCELLED") {
-      data.cancelledAt = now;
-      data.cancelReason = options.cancelReason ?? null;
-      data.cancelledById = actor.user?.id ?? null;
-      if (order.amountPaid > order.amountRefunded) {
-        notes.push(`Refund of ${formatPrice(order.amountPaid - order.amountRefunded)} to be issued.`);
-      }
-    }
-
-    const updated = await tx.order.updateMany({ where: { id: orderId, status: from }, data });
-    if (updated.count === 0) {
-      throw new TransitionError(from, to, "This order was just updated by someone else. Refresh to see the latest.");
-    }
-
-    if (to === "CANCELLED" || to === "RTO_DELIVERED") {
-      const reason: InventoryReason = options.restockReason ?? "ORDER_CANCELLED";
-      for (const item of order.items) {
-        const open = item.quantity - item.quantityCancelled - item.quantityReturned;
-        if (open <= 0 || !item.variantId) continue;
-        await putBackStock(tx, item.variantId, open, {
-          reason,
-          orderId,
-          actorId: actor.user?.id ?? null,
-          note: to === "RTO_DELIVERED" ? "Returned to origin by courier" : null,
-        });
-        if (to === "CANCELLED") {
-          await tx.orderItem.update({ where: { id: item.id }, data: { quantityCancelled: { increment: open } } });
-        }
-      }
-    }
-
-    if (to === "CANCELLED" && order.couponRedemption && !order.couponRedemption.releasedAt) {
-      await tx.couponRedemption.update({ where: { id: order.couponRedemption.id }, data: { releasedAt: now } });
-      await tx.$executeRaw`
-        UPDATE "Coupon" SET "usedCount" = GREATEST("usedCount" - 1, 0), "updatedAt" = now()
-         WHERE "id" = ${order.couponRedemption.couponId}`;
-    }
-
-    await tx.orderStatusHistory.create({
-      data: {
-        orderId,
-        fromStatus: from,
-        toStatus: to,
-        note: notes.join(" ") || null,
-        isCustomerVisible: options.customerVisible ?? true,
-        actorType: actor.type,
-        actorId: actor.user?.id ?? null,
-      },
-    });
-    return { orderNumber: order.orderNumber, from };
+  const result = await db.$transaction((tx) => changeOrderStatusTx(tx, orderId, to, actor, options), {
+    timeout: 20_000,
+    maxWait: 10_000,
   });
+  if (result.refundQueued) kickJobs();
 
   if (actor.type === "STAFF") {
     await audit({
@@ -124,6 +53,106 @@ export async function changeOrderStatus(
       after: { status: to, note: options.note ?? null },
     });
   }
+}
+
+/** The same, inside a caller's transaction (payments confirm orders this way). */
+export async function changeOrderStatusTx(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+  to: OrderStatus,
+  actor: OrderActor,
+  options: ChangeStatusOptions = {},
+): Promise<{ orderNumber: string; from: OrderStatus; refundQueued: boolean }> {
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    include: { items: true, couponRedemption: true },
+  });
+  if (!order) throw new NotFoundError("Order not found");
+
+  const from = order.status;
+  if (options.expectedFrom && options.expectedFrom !== from) {
+    throw new TransitionError(from, to, "This order was just updated by someone else. Refresh to see the latest.");
+  }
+  assertOrderTransition(from, to, actor.type);
+
+  const now = new Date();
+  const data: Prisma.OrderUpdateManyMutationInput = { status: to };
+  const notes: string[] = [];
+  if (options.note) notes.push(options.note);
+
+  if (to === "CONFIRMED") data.confirmedAt = now;
+  if (to === "PENDING_PAYMENT" && order.paymentStatus === "FAILED") data.paymentStatus = "PENDING";
+
+  if (to === "DELIVERED") {
+    data.deliveredAt = now;
+    if (order.paymentMethod === "COD" && order.amountPaid < order.grandTotal) {
+      data.amountPaid = order.grandTotal;
+      data.paymentStatus = "PAID";
+    }
+  }
+
+  if (to === "CANCELLED") {
+    data.cancelledAt = now;
+    data.cancelReason = options.cancelReason ?? null;
+    data.cancelledById = actor.user?.id ?? null;
+  }
+
+  const updated = await tx.order.updateMany({ where: { id: orderId, status: from }, data });
+  if (updated.count === 0) {
+    throw new TransitionError(from, to, "This order was just updated by someone else. Refresh to see the latest.");
+  }
+
+  if (to === "CANCELLED" || to === "RTO_DELIVERED") {
+    const reason: InventoryReason = options.restockReason ?? "ORDER_CANCELLED";
+    for (const item of order.items) {
+      const open = item.quantity - item.quantityCancelled - item.quantityReturned;
+      if (open <= 0 || !item.variantId) continue;
+      await putBackStock(tx, item.variantId, open, {
+        reason,
+        orderId,
+        actorId: actor.user?.id ?? null,
+        note: to === "RTO_DELIVERED" ? "Returned to origin by courier" : null,
+      });
+      if (to === "CANCELLED") {
+        await tx.orderItem.update({ where: { id: item.id }, data: { quantityCancelled: { increment: open } } });
+      }
+    }
+  }
+
+  if (to === "CANCELLED" && order.couponRedemption && !order.couponRedemption.releasedAt) {
+    await tx.couponRedemption.update({ where: { id: order.couponRedemption.id }, data: { releasedAt: now } });
+    await tx.$executeRaw`
+      UPDATE "Coupon" SET "usedCount" = GREATEST("usedCount" - 1, 0), "updatedAt" = timezone('utc', now())
+       WHERE "id" = ${order.couponRedemption.couponId}`;
+  }
+
+  let refundQueued = false;
+  if (to === "CANCELLED" && order.amountPaid > order.amountRefunded) {
+    const { automatic, manual } = await refundOrderBalanceTx(
+      tx,
+      orderId,
+      options.cancelReason ? `Order cancelled: ${options.cancelReason}` : "Order cancelled",
+      actor.user?.id ?? null,
+    );
+    if (automatic > 0) {
+      refundQueued = true;
+      notes.push(`A refund of ${formatPrice(automatic)} to your original payment method has been started.`);
+    }
+    if (manual > 0) notes.push(`${formatPrice(manual)} will be refunded to you by bank transfer.`);
+  }
+
+  await tx.orderStatusHistory.create({
+    data: {
+      orderId,
+      fromStatus: from,
+      toStatus: to,
+      note: notes.join(" ") || null,
+      isCustomerVisible: options.customerVisible ?? true,
+      actorType: actor.type,
+      actorId: actor.user?.id ?? null,
+    },
+  });
+  return { orderNumber: order.orderNumber, from, refundQueued };
 }
 
 /** "Cancel order" on the customer's order page. */
@@ -196,6 +225,10 @@ export async function getCustomerOrder(userId: string, orderNumber: string) {
     include: {
       items: { include: { product: { select: { slug: true } } } },
       statusHistory: { where: { isCustomerVisible: true }, orderBy: { createdAt: "asc" } },
+      refunds: {
+        orderBy: { createdAt: "asc" },
+        select: { refundNumber: true, amount: true, status: true, createdAt: true, processedAt: true },
+      },
     },
   });
 }

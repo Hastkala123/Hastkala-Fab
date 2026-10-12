@@ -10,14 +10,18 @@ import { GST_STATE_CODES } from "@/lib/gstin";
 import {
   formatDateTime,
   ORDER_STATUS_LABELS,
+  PAYMENT_ATTEMPT_LABELS,
+  PAYMENT_ATTEMPT_STYLES,
   PAYMENT_METHOD_LABELS,
   PAYMENT_STATUS_LABELS,
+  REFUND_STAFF_LABELS,
   STATUS_STYLES,
 } from "@/lib/utils";
 import { requireStaffPage } from "@/server/auth/page-guard";
 import { canTransitionOrder, ORDER_TRANSITIONS } from "@/server/orders/transitions";
 import AddressBlock from "@/components/orders/AddressBlock";
 import OrderTotals from "@/components/orders/OrderTotals";
+import PaymentActionButton from "@/components/admin/PaymentActionButton";
 import OrderStatusPanel from "./OrderStatusPanel";
 
 export const metadata: Metadata = { title: "Order Details" };
@@ -36,6 +40,8 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ ord
       items: true,
       statusHistory: { orderBy: { createdAt: "desc" } },
       couponRedemption: { select: { releasedAt: true } },
+      payments: { orderBy: { createdAt: "asc" } },
+      refunds: { orderBy: { createdAt: "asc" } },
     },
   });
   if (!order) notFound();
@@ -49,6 +55,8 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ ord
     .map((rule) => rule.to)
     .filter((to) => canTransitionOrder(order.status, to, "STAFF"))
     .filter((to) => can(staff, "orders.manage") || (SHIPPING_STATUSES.has(to) && can(staff, "shipping.manage")));
+
+  const canPayments = can(staff, "payments.verify") || can(staff, "orders.manage");
 
   return (
     <div>
@@ -206,8 +214,91 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ ord
                   {order.couponRedemption?.releasedAt ? " (released on cancellation)" : ""}
                 </p>
               )}
+              {(order.amountPaid > 0 || order.amountRefunded > 0) && (
+                <dl className="mt-3 grid grid-cols-2 gap-1 text-xs">
+                  <dt className="text-slate-500">Received</dt>
+                  <dd className="text-right font-semibold text-indigo-ink-900">{formatPrice(order.amountPaid)}</dd>
+                  <dt className="text-slate-500">Refunded</dt>
+                  <dd className="text-right font-semibold text-indigo-ink-900">{formatPrice(order.amountRefunded)}</dd>
+                </dl>
+              )}
             </div>
           </section>
+
+          {(order.payments.length > 0 || order.refunds.length > 0) && (
+            <section className="hf-card p-5">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Payment attempts</h2>
+                {canPayments && order.payments.some((p) => p.providerOrderId) && (
+                  <PaymentActionButton body={{ action: "sync", orderId: order.id }} label="Check with gateway" />
+                )}
+              </div>
+              <ul className="mt-3 space-y-3 text-xs">
+                {order.payments.map((payment) => (
+                  <li key={payment.id} className="rounded-lg border border-cotton-200 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`hf-badge ${PAYMENT_ATTEMPT_STYLES[payment.status] ?? ""}`}>
+                        {PAYMENT_ATTEMPT_LABELS[payment.status] ?? payment.status}
+                      </span>
+                      <span className="font-semibold text-indigo-ink-900">{formatPrice(payment.amount)}</span>
+                    </div>
+                    <p className="mt-1.5 text-slate-500">
+                      {payment.provider === "TEST" ? "Test gateway" : payment.provider}
+                      {payment.method ? ` · ${PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}` : ""} ·{" "}
+                      {formatDateTime(payment.capturedAt ?? payment.createdAt)}
+                    </p>
+                    {payment.providerPaymentId && <p className="break-all font-mono text-[11px] text-slate-400">{payment.providerPaymentId}</p>}
+                    {payment.failureReason && <p className="mt-1 text-madder-700">{payment.failureReason}</p>}
+                    {payment.amountRefunded > 0 && (
+                      <p className="mt-1 text-slate-500">Refunded {formatPrice(payment.amountRefunded)}</p>
+                    )}
+                    {payment.attentionReason && (
+                      <div className="mt-2 rounded bg-turmeric-50 p-2 text-turmeric-900">
+                        <p className="font-semibold">Needs attention</p>
+                        <p>{payment.attentionReason}</p>
+                        {can(staff, "payments.verify") && (
+                          <PaymentActionButton
+                            body={{ action: "resolve", paymentId: payment.id }}
+                            label="Mark resolved"
+                            className="hf-link mt-1 text-xs font-semibold"
+                          />
+                        )}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+
+              {order.refunds.length > 0 && (
+                <>
+                  <h3 className="mt-5 text-xs font-bold uppercase tracking-wide text-slate-500">Refunds</h3>
+                  <ul className="mt-2 space-y-2 text-xs">
+                    {order.refunds.map((refund) => (
+                      <li key={refund.id} className="rounded-lg border border-cotton-200 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-indigo-ink-900">{refund.refundNumber}</span>
+                          <span className="font-semibold text-indigo-ink-900">{formatPrice(refund.amount)}</span>
+                        </div>
+                        <p className="mt-1 text-slate-500">
+                          {REFUND_STAFF_LABELS[refund.status]} · {refund.reason}
+                        </p>
+                        {refund.providerRefundId && <p className="break-all font-mono text-[11px] text-slate-400">{refund.providerRefundId}</p>}
+                        {refund.failureReason && <p className="mt-1 text-madder-700">{refund.failureReason}</p>}
+                        {refund.status === "FAILED" && can(staff, "refunds.issue") && (
+                          <PaymentActionButton
+                            body={{ action: "retry-refund", refundId: refund.id }}
+                            label="Retry refund"
+                            confirmText={`Send refund ${refund.refundNumber} of ${formatPrice(refund.amount)} to the gateway again?`}
+                            className="hf-btn hf-btn-outline mt-2 px-3 py-1.5 text-xs"
+                          />
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </section>
+          )}
         </div>
       </div>
     </div>

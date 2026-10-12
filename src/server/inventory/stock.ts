@@ -56,7 +56,7 @@ export async function takeStock(
   if (!Number.isInteger(quantity) || quantity <= 0) throw new RangeError("quantity must be positive");
   const rows = await tx.$queryRaw<{ stock: number }[]>`
     UPDATE "ProductVariant"
-       SET "stock" = "stock" - ${quantity}, "updatedAt" = now()
+       SET "stock" = "stock" - ${quantity}, "updatedAt" = timezone('utc', now())
      WHERE "id" = ${variantId} AND "stock" >= ${quantity}
        AND "isActive" = true AND "archivedAt" IS NULL
     RETURNING "stock"`;
@@ -77,7 +77,7 @@ export async function putBackStock(
 ): Promise<number | null> {
   if (!Number.isInteger(quantity) || quantity <= 0) throw new RangeError("quantity must be positive");
   const rows = await tx.$queryRaw<{ stock: number }[]>`
-    UPDATE "ProductVariant" SET "stock" = "stock" + ${quantity}, "updatedAt" = now()
+    UPDATE "ProductVariant" SET "stock" = "stock" + ${quantity}, "updatedAt" = timezone('utc', now())
      WHERE "id" = ${variantId}
     RETURNING "stock"`;
   if (rows.length === 0) return null; // variant deleted since; nothing to restore
@@ -95,7 +95,7 @@ export async function setStock(
 ): Promise<{ before: number; after: number } | null> {
   if (!Number.isInteger(newStock) || newStock < 0) throw new RangeError("stock must be 0 or more");
   const rows = await tx.$queryRaw<{ before: number }[]>`
-    UPDATE "ProductVariant" v SET "stock" = ${newStock}, "updatedAt" = now()
+    UPDATE "ProductVariant" v SET "stock" = ${newStock}, "updatedAt" = timezone('utc', now())
       FROM (SELECT "id", "stock" FROM "ProductVariant" WHERE "id" = ${variantId} FOR UPDATE) old
      WHERE v."id" = old."id"
     RETURNING old."stock" AS before`;

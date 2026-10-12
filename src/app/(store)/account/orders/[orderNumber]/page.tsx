@@ -12,6 +12,7 @@ import {
   ORDER_STATUS_LABELS,
   PAYMENT_METHOD_LABELS,
   PAYMENT_STATUS_LABELS,
+  REFUND_STATUS_LABELS,
   STATUS_STYLES,
 } from "@/lib/utils";
 import { CUSTOMER_CANCELLABLE } from "@/server/orders/transitions";
@@ -20,6 +21,8 @@ import { getSettings } from "@/server/settings";
 import AddressBlock from "@/components/orders/AddressBlock";
 import OrderTotals from "@/components/orders/OrderTotals";
 import CancelOrderButton from "./CancelOrderButton";
+import PayNowButton from "@/components/payments/PayNowButton";
+import { expireOrderIfDue } from "@/server/payments/expiry";
 
 export const metadata: Metadata = {
   title: "Order Details",
@@ -33,6 +36,10 @@ const OFF_TRACK = new Set(["CANCELLED", "RTO_IN_TRANSIT", "RTO_DELIVERED", "PEND
 export default async function OrderDetailPage({ params }: { params: Promise<{ orderNumber: string }> }) {
   const { orderNumber } = await params;
   const user = await requireUserPage();
+  const found = await getCustomerOrder(user.id, orderNumber);
+  if (!found) notFound();
+  // A payment window that ended while nobody was looking is settled before showing the order.
+  await expireOrderIfDue(found.id).catch(() => false);
   const [order, settings] = await Promise.all([getCustomerOrder(user.id, orderNumber), getSettings()]);
   if (!order) notFound();
 
@@ -55,10 +62,21 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ or
       </div>
 
       {(order.status === "PENDING_PAYMENT" || order.status === "PAYMENT_FAILED") && (
-        <p className="mt-6 rounded-lg bg-turmeric-50 px-4 py-3 text-sm text-turmeric-900">
-          {order.status === "PAYMENT_FAILED" ? "The payment didn't go through. " : "We're waiting for your payment. "}
-          {order.paymentDueBy && `Your items are held until ${formatDateTime(order.paymentDueBy)}.`}
-        </p>
+        <div className="mt-6 space-y-3 rounded-card border border-turmeric-200 bg-turmeric-50 p-4">
+          <p className="text-sm text-turmeric-900">
+            {order.status === "PAYMENT_FAILED"
+              ? "The last payment attempt didn't go through, and no money was taken. "
+              : "We're waiting for your payment. "}
+            {order.paymentDueBy && `Your items are held until ${formatDateTime(order.paymentDueBy)}.`}
+          </p>
+          {order.paymentDueBy && (
+            <PayNowButton
+              orderNumber={order.orderNumber}
+              amount={order.grandTotal - order.amountPaid}
+              dueBy={order.paymentDueBy.toISOString()}
+            />
+          )}
+        </div>
       )}
 
       {!OFF_TRACK.has(order.status) && (
@@ -143,6 +161,18 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ or
             {PAYMENT_METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod} ·{" "}
             {(PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus).toLowerCase()}
           </p>
+          {order.refunds.length > 0 && (
+            <ul className="mt-3 space-y-1.5 border-t border-cotton-200 pt-3 text-xs">
+              {order.refunds.map((refund) => (
+                <li key={refund.refundNumber} className="flex justify-between gap-3">
+                  <span className="text-slate-600">
+                    Refund {refund.refundNumber} · {REFUND_STATUS_LABELS[refund.status] ?? refund.status}
+                  </span>
+                  <span className="font-semibold text-indigo-ink-900">{formatPrice(refund.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         <section className="hf-card p-5">

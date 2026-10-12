@@ -7,6 +7,7 @@ import { hasPermission, type Permission } from "@/server/auth/permissions";
 import { TransitionError } from "@/server/orders/transitions";
 import { UserError } from "@/server/errors";
 import { StockError } from "@/server/inventory/stock";
+import { GatewayError } from "@/server/payments/types";
 import { verifyCsrf } from "./csrf";
 import { getClientIp, rateLimit } from "./ratelimit";
 import { isProd } from "./env";
@@ -170,6 +171,10 @@ export function handler(
       }
       if (error instanceof UserError) {
         return fail(error.message, error.status, error.fields);
+      }
+      if (error instanceof GatewayError) {
+        console.error("[api] payment gateway error:", error.message);
+        return fail("The payment service couldn't be reached. Please try again in a minute.", 502);
       }
       console.error("[api] unhandled error:", error);
       return fail("Something went wrong. Please try again.", 500);

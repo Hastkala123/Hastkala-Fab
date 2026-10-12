@@ -171,6 +171,8 @@ enum PaymentMethod {
 
 enum PaymentProvider {
   RAZORPAY
+  /// Development stand-in for Razorpay (never available in production).
+  TEST
   COD
   MANUAL
   STORE_CREDIT
@@ -1289,8 +1291,9 @@ model Payment {
   amount            Int
   amountRefunded    Int                  @default(0)
   currency          String               @default("INR")
-  /// Razorpay order_… id
-  providerOrderId   String?              @unique
+  /// Razorpay order_… id. One gateway order can carry several attempts
+  /// (a failed UPI try, then a card), so this is not unique.
+  providerOrderId   String?
   /// Razorpay pay_… id
   providerPaymentId String?              @unique
   idempotencyKey    String               @unique
@@ -1300,12 +1303,20 @@ model Payment {
   manualReference   String?
   verifiedById      String?
   capturedAt        DateTime?
+  /// Set when something needs a person to look (amount mismatch, second
+  /// payment for a paid order, refund that failed); cleared by staff.
+  attentionReason   String?
+  attentionAt       DateTime?
+  /// Last time the gateway was asked about this attempt (reconciliation).
+  lastSyncedAt      DateTime?
   refunds           Refund[]
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
 
   @@index([orderId])
+  @@index([providerOrderId])
   @@index([status, createdAt])
+  @@index([attentionAt])
 }
 
 /// Raw inbound webhooks (Razorpay, Shiprocket). The unique key makes replays

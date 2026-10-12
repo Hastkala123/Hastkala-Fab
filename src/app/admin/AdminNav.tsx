@@ -26,6 +26,7 @@ const SECTIONS: { title: string; links: NavLink[] }[] = [
     title: "Sales",
     links: [
       { href: "/admin/orders", label: "Orders", permission: "orders.view" },
+      { href: "/admin/payments", label: "Payments", permission: "payments.verify" },
       { href: "/admin/coupons", label: "Coupons", permission: "marketing.manage" },
     ],
   },
