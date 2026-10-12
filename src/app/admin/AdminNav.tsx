@@ -34,6 +34,7 @@ const SECTIONS: { title: string; links: NavLink[] }[] = [
     title: "Customers",
     links: [
       { href: "/admin/customers", label: "Customers", permission: "customers.view" },
+      { href: "/admin/wholesale", label: "Wholesale", permission: "wholesale.manage" },
       { href: "/admin/reviews", label: "Reviews", permission: "reviews.manage" },
       { href: "/admin/tickets", label: "Support tickets", permission: "support.manage" },
     ],

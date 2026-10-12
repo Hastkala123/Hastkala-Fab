@@ -31,6 +31,10 @@ export async function expireOrderIfDue(orderId: string, now = new Date()): Promi
 
   const fresh = await db.order.findUnique({ where: { id: orderId }, select: { status: true } });
   if (!fresh || !isAwaitingPayment(fresh.status)) return false;
+  // A bank transfer the buyer reported is waiting for staff to check: never
+  // release the stock from under it (Admin → Payments lists it).
+  const transferToCheck = await db.payment.count({ where: { orderId, provider: "MANUAL", status: "CREATED" } });
+  if (transferToCheck > 0) return false;
   try {
     await changeOrderStatus(orderId, "CANCELLED", { type: "SYSTEM", user: null }, {
       expectedFrom: fresh.status,
@@ -51,6 +55,8 @@ export async function expireUnpaidOrders(now = new Date(), limit = 25): Promise<
     where: {
       status: { in: ["PENDING_PAYMENT", "PAYMENT_FAILED"] },
       paymentDueBy: { lte: new Date(now.getTime() - EXPIRY_GRACE_MS) },
+      // Held for staff: a reported bank transfer not yet checked.
+      payments: { none: { provider: "MANUAL", status: "CREATED" } },
     },
     orderBy: { paymentDueBy: "asc" },
     take: limit,

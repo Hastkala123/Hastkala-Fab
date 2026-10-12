@@ -5,9 +5,10 @@ import { formatPrice } from "@/lib/money";
 import { useFinishPayment, usePayment } from "./usePayment";
 
 /** Seconds until `iso`, updated every second (null until mounted, to match the server render). */
-function useSecondsLeft(iso: string): number | null {
+function useSecondsLeft(iso: string | undefined): number | null {
   const [seconds, setSeconds] = useState<number | null>(null);
   useEffect(() => {
+    if (!iso) return;
     const update = () => setSeconds(Math.floor((new Date(iso).getTime() - Date.now()) / 1000));
     update();
     const timer = window.setInterval(update, 1000);
@@ -25,11 +26,14 @@ export default function PayNowButton({
   amount,
   dueBy,
   from = "order",
+  label,
 }: {
   orderNumber: string;
   amount: number;
-  dueBy: string;
+  /** When the stock hold ends (orders awaiting payment). Omit for a balance payment. */
+  dueBy?: string;
   from?: "checkout" | "order";
+  label?: string;
 }) {
   const { pay, busy, dialog } = usePayment();
   const finish = useFinishPayment(from);
@@ -52,7 +56,7 @@ export default function PayNowButton({
         disabled={busy}
         className="hf-btn hf-btn-accent px-6 py-3"
       >
-        {busy ? "Opening payment…" : `Pay ${formatPrice(amount)} now`}
+        {busy ? "Opening payment…" : (label ?? `Pay ${formatPrice(amount)} now`)}
       </button>
       {secondsLeft !== null && (
         <p className="text-xs text-slate-500" aria-live="off">

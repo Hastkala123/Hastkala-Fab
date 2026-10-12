@@ -2,7 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import { getSettings } from "@/server/settings";
-import type { AttributeOption, CategoryOption, HsnOption, ProductFormValues } from "@/components/admin/ProductForm";
+import type { AttributeOption, CategoryOption, HsnOption, ProductFormValues, TierOption } from "@/components/admin/ProductForm";
 
 const rupees = (paise: number | null | undefined) => (paise == null ? "" : String(paise / 100));
 
@@ -12,8 +12,9 @@ export async function productFormOptions(): Promise<{
   hsnCodes: HsnOption[];
   attributes: AttributeOption[];
   wholesalePlusGst: boolean;
+  tiers: TierOption[];
 }> {
-  const [categories, hsnCodes, attributes, settings] = await Promise.all([
+  const [categories, hsnCodes, attributes, settings, tiers] = await Promise.all([
     db.category.findMany({
       orderBy: [{ parentId: "asc" }, { position: "asc" }],
       select: { id: true, name: true, hsnCodeId: true, parent: { select: { name: true } } },
@@ -24,8 +25,10 @@ export async function productFormOptions(): Promise<{
       select: { id: true, label: true, type: true, unit: true, options: true, categoryId: true, isRequired: true },
     }),
     getSettings(),
+    db.priceTier.findMany({ orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true, isDefault: true } }),
   ]);
   return {
+    tiers,
     categories: categories.map((c) => ({ id: c.id, name: c.name, parentName: c.parent?.name ?? null, hsnCodeId: c.hsnCodeId })),
     hsnCodes,
     attributes,
@@ -77,6 +80,12 @@ export async function productFormValues(id: string): Promise<ProductFormValues |
     wholesalePrices: product.wholesalePrices
       .filter((w) => w.priceTierId === tier?.id)
       .map((w) => ({ minQuantity: String(w.minQuantity), unitPrice: rupees(w.unitPrice) })),
+    tierPrices: product.wholesalePrices
+      .filter((w) => w.priceTierId !== tier?.id)
+      .reduce<ProductFormValues["tierPrices"]>((byTier, w) => {
+        (byTier[w.priceTierId] ??= []).push({ minQuantity: String(w.minQuantity), unitPrice: rupees(w.unitPrice) });
+        return byTier;
+      }, {}),
     weightGrams: product.weightGrams != null ? String(product.weightGrams) : "",
     careInstructions: product.careInstructions ?? "",
     isReturnable: product.isReturnable,

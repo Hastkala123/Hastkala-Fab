@@ -40,6 +40,7 @@ export default async function AdminCategoriesPage() {
           slug: c.slug,
           description: c.description ?? "",
           bottomContent: c.bottomContent ?? "",
+          wholesaleIntro: c.wholesaleIntro ?? "",
           imageUrl: c.imageUrl ?? "",
           bannerImageUrl: c.bannerImageUrl ?? "",
           parentId: c.parentId ?? "",

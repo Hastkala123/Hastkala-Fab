@@ -11,7 +11,7 @@ Each milestone ends with typecheck + lint + tests + production build passing, th
 | M5 | Returns, exchanges, refunds, store credit | ⏳ |
 | M6 | Notifications (email / SMS / WhatsApp, editable templates) + background job runner | ⏳ |
 | M7 | Phone OTP login, guest checkout, forgot password, staff 2FA, sign out other devices | ⏳ |
-| M8 | Wholesale: application + documents, approval, tiers, quick order, catalogue PDF, ledger | ⏳ |
+| M8 | Wholesale: application + documents, approval, tiers, quick order, catalogue PDF, ledger | ✅ Done (12 Oct 2026, brought forward at the owner's request) |
 | M9 | Full admin panel: settings, content (pages, banners, homepage sections, FAQs, blog), inventory, staff and roles, audit log, drag-and-drop ordering | ⏳ |
 | M10 | Missing pages + new design across the site, `next/font`, sitemap, robots, structured data | ⏳ |
 
@@ -90,3 +90,36 @@ Run them with `npm run db:start` then `npm test` (83 tests: 71 unit, 12 integrat
 5. Place a test order with Razorpay's test UPI id / test card, cancel it, and check the refund appears in Admin → Payments.
 
 Until the keys are set, development uses a built-in **test gateway** (Pay / Make it fail / Close buttons, no real money). It sends the same signed messages Razorpay does, and production never uses it: online payment stays switched off there until the keys exist.
+
+## M8 — what was built (wholesale)
+
+Brought forward ahead of M3 because the owner asked for it. The Wholesale link in the header used to lead to a missing page.
+
+**Public**
+- `/wholesale`: what wholesale is, how it works, ranges, sample designs, enquiry form, WhatsApp button, FAQs (with FAQPage structured data). The headline, introduction, minimum-quantity note and FAQs are edited in **Settings → Wholesale**.
+- `/wholesale/{category}` for every category with wholesale designs, e.g. "Kurtis wholesale". The introduction can be edited per category; there's a sensible default. Visitors see minimum quantities, and only approved buyers see trade prices.
+- Enquiries need no account. They become leads in Admin → Wholesale → Enquiries (one lead per phone number in 10 minutes, a bot trap, rate limited).
+
+**Buyers** (Account → Wholesale)
+- Apply or re-apply with business details, GSTIN (checksum-checked) and documents: GST certificate, shop photo, visiting card. Documents are stored privately; only staff can open them. Uploads are checked by their bytes, so a renamed HTML file is refused.
+- Changing the GSTIN or business name of an approved account sends it back for review, and trade prices pause until then.
+- **Quick order:** one grid, quantity per size for every design, live price breaks and minimums, then everything goes into the bag at once. Stock problems are shown per size.
+- **Catalogue & price list:** a printable line sheet ("Save as PDF") with the buyer's own prices, plus a CSV price list for Excel (safe against spreadsheet formulas).
+- **Account statement (khata):** balance due, overdue, credit available, every order's paid and balance amounts, payments (including transfers being checked), refunds. Pay a balance online, or report a bank transfer.
+
+**Payment terms** (set per buyer when approving)
+- *Pay before dispatch:* online, or bank transfer. Stock is held 48 hours (setting) while the transfer arrives.
+- *Advance + balance:* the advance (default 30%, per buyer or store setting) confirms the order. The balance is paid later online or by transfer, and staff see "Balance due — collect before dispatch".
+- *Credit:* "Buy on credit" confirms the order at once with a due date (default 30 days). It's refused when the order would pass the buyer's credit limit.
+- **Bank transfers:** the buyer gives the UTR, and staff press "Money received" or "Not received" (with a reason the buyer sees) in Admin → Payments or on the order. An order whose transfer is being checked is never released by the expiry job. Bank details are in Settings → Wholesale.
+- COD for wholesale is off unless switched on in Settings.
+
+**Admin → Wholesale**
+- Applications (with documents) → approve with price tier and terms, or reject with a reason.
+- Buyers: search, tier, terms, balance due, suspend or reinstate.
+- Enquiries: status and notes.
+- Price tiers: add, rename, set the default, delete when unused. Each tier's prices are set in the product editor; a design with no price in a buyer's tier uses the default tier's.
+
+**Tests:** 137 (96 unit, 41 integration), including approval → tier prices, the default-tier fallback, GSTIN re-review, credit limit, advance then balance, bank transfer kept through expiry and confirmed or rejected by staff, and retail shoppers refused credit or transfer.
+
+**Later:** emails and WhatsApp messages on approval or rejection (M6); GST invoices on the statement (M3).

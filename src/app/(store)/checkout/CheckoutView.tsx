@@ -16,26 +16,32 @@ import { FormError } from "@/components/ui/Field";
 import { useFinishPayment, usePayment } from "@/components/payments/usePayment";
 import { OrderTotals } from "../cart/CartView";
 
-const PAYMENT_METHODS = [
-  { value: "UPI", label: "UPI", detail: "GPay, PhonePe, Paytm and more" },
-  { value: "CARD", label: "Credit / debit card", detail: "Visa, Mastercard, RuPay" },
-  { value: "NETBANKING", label: "Net banking", detail: "All major Indian banks" },
-  { value: "COD", label: "Cash on delivery", detail: "Pay when it arrives" },
-] as const;
+export type CheckoutMethod = {
+  value: string;
+  label: string;
+  detail: string;
+  available: boolean;
+  reason?: string;
+};
 
-type Method = (typeof PAYMENT_METHODS)[number]["value"];
+const ONLINE = new Set(["UPI", "CARD", "NETBANKING", "WALLET"]);
 
 export default function CheckoutView({
   online,
   cod,
   addresses,
-  onlineAvailable,
+  methods,
+  advance,
+  bankHoldHours,
 }: {
   online: CartDisplay;
   cod: CartDisplay;
   addresses: AddressValues[];
-  /** False when no gateway is set up or the owner switched online payment off. */
-  onlineAvailable: boolean;
+  /** Ways this shopper may pay, decided on the server (retail vs wholesale terms). */
+  methods: CheckoutMethod[];
+  /** Advance due now on "advance + balance" terms (0 = full payment). */
+  advance: number;
+  bankHoldHours: number;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -44,7 +50,7 @@ export default function CheckoutView({
     addresses.find((a) => a.isDefault)?.id ?? addresses[0]?.id ?? null,
   );
   const [showAddressForm, setShowAddressForm] = useState(addresses.length === 0);
-  const [paymentMethod, setPaymentMethod] = useState<Method>(onlineAvailable ? "UPI" : "COD");
+  const [paymentMethod, setPaymentMethod] = useState<string>(methods.find((m) => m.available)?.value ?? methods[0]?.value ?? "UPI");
   const { pay, dialog } = usePayment();
   const finishPayment = useFinishPayment("checkout");
   const [note, setNote] = useState("");
@@ -76,7 +82,7 @@ export default function CheckoutView({
       return;
     }
     const { orderNumber, status } = result.data;
-    if (status === "PENDING_PAYMENT") {
+    if (status === "PENDING_PAYMENT" && ONLINE.has(paymentMethod)) {
       // The order holds the stock; now take the payment.
       await finishPayment(orderNumber, await pay(orderNumber));
       return;
@@ -161,8 +167,8 @@ export default function CheckoutView({
           </h2>
 
           <ul className="mt-4 space-y-2.5">
-            {PAYMENT_METHODS.map((method) => {
-              const disabled = method.value === "COD" ? !cod.cod.available : !onlineAvailable;
+            {methods.map((method) => {
+              const disabled = !method.available;
               return (
                 <li key={method.value}>
                   <label
@@ -187,9 +193,7 @@ export default function CheckoutView({
                       <p className="font-semibold text-indigo-ink-900">{method.label}</p>
                       <p className="text-xs text-slate-500">
                         {disabled
-                          ? method.value === "COD"
-                            ? cod.cod.reason
-                            : "Online payment is unavailable right now"
+                          ? method.reason
                           : method.value === "COD" && cod.codFee > 0
                             ? `${method.detail} · ${formatPrice(cod.codFee)} fee`
                             : method.detail}
@@ -200,6 +204,18 @@ export default function CheckoutView({
               );
             })}
           </ul>
+          {advance > 0 && (ONLINE.has(paymentMethod) || paymentMethod === "BANK_TRANSFER") && (
+            <p className="mt-3 rounded-lg bg-indigo-ink-50 px-3.5 py-2.5 text-sm text-indigo-ink-900">
+              Your terms: pay <strong>{formatPrice(advance)}</strong> advance now to confirm the order; the balance of{" "}
+              {formatPrice(cart.grandTotal - advance)} is due before dispatch.
+            </p>
+          )}
+          {paymentMethod === "BANK_TRANSFER" && (
+            <p className="mt-3 rounded-lg bg-cotton-100 px-3.5 py-2.5 text-sm text-slate-700">
+              After you place the order we&apos;ll show our bank details. We hold the stock for {bankHoldHours} hours while
+              your transfer arrives; tell us the UTR and we confirm the order once the money is in.
+            </p>
+          )}
         </section>
 
         <section className="hf-card p-5" aria-labelledby="step-review">
@@ -279,14 +295,18 @@ export default function CheckoutView({
           <button
             type="button"
             onClick={placeOrder}
-            disabled={placing || !addressId || blocked || (paymentMethod === "COD" ? !cod.cod.available : !onlineAvailable)}
+            disabled={placing || !addressId || blocked || !methods.find((m) => m.value === paymentMethod)?.available}
             className="hf-btn hf-btn-accent mt-3 w-full py-3"
           >
             {placing
               ? "Placing your order…"
-              : paymentMethod === "COD"
-                ? `Place order · ${formatPrice(cart.grandTotal)}`
-                : `Place order and pay · ${formatPrice(cart.grandTotal)}`}
+              : ONLINE.has(paymentMethod)
+                ? advance > 0
+                  ? `Place order and pay ${formatPrice(advance)} advance`
+                  : `Place order and pay · ${formatPrice(cart.grandTotal)}`
+                : paymentMethod === "CREDIT"
+                  ? `Place order on credit · ${formatPrice(cart.grandTotal)}`
+                  : `Place order · ${formatPrice(cart.grandTotal)}`}
           </button>
           {dialog}
 

@@ -21,6 +21,8 @@ import type { CartDisplay } from "@/lib/cart-types";
 
 const GUEST_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 const MAX_LINES = 50;
+/** Trade buyers order many sizes of many designs at once. */
+const WHOLESALE_MAX_LINES = 250;
 const COOKIE_DAYS = 30;
 
 async function guestToken(): Promise<string | null> {
@@ -162,6 +164,10 @@ export async function getCartView(
   };
 }
 
+async function maxLines(user: SessionUser | null): Promise<number> {
+  return (await viewerFor(user)).wholesale ? WHOLESALE_MAX_LINES : MAX_LINES;
+}
+
 async function lineLimit(user: SessionUser | null): Promise<number> {
   const [settings, viewer] = await Promise.all([getSettings(), viewerFor(user)]);
   return viewer.wholesale ? settings.wholesale.maxQuantityPerLine : settings.checkout.maxQuantityPerLine;
@@ -188,8 +194,8 @@ export async function addToCart(variantId: string, quantity: number): Promise<vo
     select: { quantity: true, savedForLater: true },
   });
   if (!existing) {
-    const lines = await db.cartItem.count({ where: { cartId: cart.id } });
-    if (lines >= MAX_LINES) throw new UserError(`Your bag can hold up to ${MAX_LINES} different items.`);
+    const [lines, cap] = await Promise.all([db.cartItem.count({ where: { cartId: cart.id } }), maxLines(user)]);
+    if (lines >= cap) throw new UserError(`Your bag can hold up to ${cap} different items.`);
   }
 
   const already = existing && !existing.savedForLater ? existing.quantity : 0;
@@ -210,6 +216,54 @@ export async function addToCart(variantId: string, quantity: number): Promise<vo
     update: { quantity: wanted, savedForLater: false },
   });
   await db.cart.update({ where: { id: cart.id }, data: { updatedAt: new Date() } });
+}
+
+/**
+ * Wholesale quick order: sets each line to the quantity typed in the grid
+ * (replacing what was in the bag for that size), all or nothing. Every
+ * problem is reported at once, keyed by variant, so the grid can show them.
+ */
+export async function setCartLines(items: { variantId: string; quantity: number }[]): Promise<number> {
+  const user = await getCurrentUser();
+  const merged = new Map<string, number>();
+  for (const item of items) merged.set(item.variantId, (merged.get(item.variantId) ?? 0) + item.quantity);
+
+  const [variants, limit] = await Promise.all([
+    db.productVariant.findMany({
+      where: { id: { in: [...merged.keys()] }, isActive: true, archivedAt: null, product: liveProductWhere() },
+      select: { id: true, stock: true, sku: true },
+    }),
+    lineLimit(user),
+  ]);
+  const byId = new Map(variants.map((v) => [v.id, v]));
+  const problems: Record<string, string> = {};
+  for (const [variantId, quantity] of merged) {
+    const variant = byId.get(variantId);
+    if (!variant) problems[variantId] = "No longer available";
+    else if (quantity > variant.stock) problems[variantId] = `Only ${variant.stock} in stock`;
+    else if (quantity > limit) problems[variantId] = `At most ${limit} per size`;
+  }
+  if (Object.keys(problems).length > 0) {
+    throw new UserError("Some quantities can't be added — see the highlighted sizes.", 409, problems);
+  }
+
+  const cart = await ensureCart(user);
+  const cap = await maxLines(user);
+  await db.$transaction(async (tx) => {
+    const existing = await tx.cartItem.count({ where: { cartId: cart.id, variantId: { notIn: [...merged.keys()] } } });
+    if (existing + merged.size > cap) {
+      throw new UserError(`Your bag can hold up to ${cap} different items. Place this order in parts.`, 409);
+    }
+    for (const [variantId, quantity] of merged) {
+      await tx.cartItem.upsert({
+        where: { cartId_variantId: { cartId: cart.id, variantId } },
+        create: { cartId: cart.id, variantId, quantity },
+        update: { quantity, savedForLater: false },
+      });
+    }
+    await tx.cart.update({ where: { id: cart.id }, data: { updatedAt: new Date() } });
+  });
+  return merged.size;
 }
 
 async function ownedItem(itemId: string) {

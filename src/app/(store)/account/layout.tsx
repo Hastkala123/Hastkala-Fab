@@ -19,8 +19,8 @@ export default async function AccountLayout({
 
   return (
     <div className="hf-container py-8 sm:py-12">
-      <div className="grid gap-8 lg:grid-cols-[240px_1fr] lg:gap-12">
-        <aside>
+      <div className="grid gap-8 lg:grid-cols-[240px_1fr] lg:gap-12 print:block">
+        <aside className="print:hidden">
           <div className="hf-card p-5">
             <div className="flex items-center gap-3">
               <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-indigo-ink-800 font-display text-lg font-bold text-cotton-50">
@@ -48,7 +48,7 @@ export default async function AccountLayout({
                   ? "✓ Wholesale account approved — trade prices are on"
                   : user.wholesaleStatus === "PENDING"
                     ? "⏳ We're checking your business details"
-                    : "Wholesale account not active — see My profile"}
+                    : "Wholesale account not active — see Wholesale account"}
               </p>
             )}
 
@@ -62,7 +62,7 @@ export default async function AccountLayout({
             )}
           </div>
 
-          <AccountNav />
+          <AccountNav wholesaleStatus={user.wholesaleStatus} />
         </aside>
 
         <div>{children}</div>

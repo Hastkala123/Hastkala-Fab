@@ -22,6 +22,7 @@ import { canTransitionOrder, ORDER_TRANSITIONS } from "@/server/orders/transitio
 import AddressBlock from "@/components/orders/AddressBlock";
 import OrderTotals from "@/components/orders/OrderTotals";
 import PaymentActionButton from "@/components/admin/PaymentActionButton";
+import TransferReview from "@/components/admin/TransferReview";
 import OrderStatusPanel from "./OrderStatusPanel";
 
 export const metadata: Metadata = { title: "Order Details" };
@@ -214,6 +215,22 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ ord
                   {order.couponRedemption?.releasedAt ? " (released on cancellation)" : ""}
                 </p>
               )}
+              {order.paymentTerms !== "PREPAID" && (
+                <p className="mt-1 text-xs text-slate-500">
+                  Terms: {order.paymentTerms === "CREDIT" ? "credit" : "advance + balance"}
+                  {order.advanceAmount > 0 ? ` · advance ${formatPrice(order.advanceAmount)}` : ""}
+                  {order.balanceDueAt ? ` · balance due ${formatDateTime(order.balanceDueAt)}` : ""}
+                </p>
+              )}
+              {order.paymentMethod !== "COD" &&
+                order.status !== "CANCELLED" &&
+                order.amountPaid - order.amountRefunded < order.grandTotal &&
+                !["PENDING_PAYMENT", "PAYMENT_FAILED"].includes(order.status) && (
+                  <p className="mt-2 rounded bg-madder-50 px-2.5 py-1.5 text-xs font-semibold text-madder-800">
+                    Balance due: {formatPrice(order.grandTotal - (order.amountPaid - order.amountRefunded))} — collect before dispatch
+                    {order.paymentMethod === "CREDIT" ? " (or by the credit due date)" : ""}
+                  </p>
+                )}
               {(order.amountPaid > 0 || order.amountRefunded > 0) && (
                 <dl className="mt-3 grid grid-cols-2 gap-1 text-xs">
                   <dt className="text-slate-500">Received</dt>
@@ -243,11 +260,15 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ ord
                       <span className="font-semibold text-indigo-ink-900">{formatPrice(payment.amount)}</span>
                     </div>
                     <p className="mt-1.5 text-slate-500">
-                      {payment.provider === "TEST" ? "Test gateway" : payment.provider}
+                      {payment.provider === "TEST" ? "Test gateway" : payment.provider === "MANUAL" ? "Bank transfer" : payment.provider}
                       {payment.method ? ` · ${PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}` : ""} ·{" "}
                       {formatDateTime(payment.capturedAt ?? payment.createdAt)}
                     </p>
                     {payment.providerPaymentId && <p className="break-all font-mono text-[11px] text-slate-400">{payment.providerPaymentId}</p>}
+                    {payment.manualReference && <p className="font-mono text-[11px] text-slate-500">UTR {payment.manualReference}</p>}
+                    {payment.provider === "MANUAL" && payment.status === "CREATED" && can(staff, "payments.verify") && (
+                      <TransferReview paymentId={payment.id} amount={payment.amount} reference={payment.manualReference} />
+                    )}
                     {payment.failureReason && <p className="mt-1 text-madder-700">{payment.failureReason}</p>}
                     {payment.amountRefunded > 0 && (
                       <p className="mt-1 text-slate-500">Refunded {formatPrice(payment.amountRefunded)}</p>

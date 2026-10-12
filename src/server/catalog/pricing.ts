@@ -10,9 +10,30 @@ export type Viewer = {
   wholesale: boolean;
   /** The buyer's price tier, or the default tier. */
   priceTierId: string | null;
+  /** The default ("Standard") tier: used for designs with no price in the buyer's tier. */
+  defaultTierId: string | null;
 };
 
-export const RETAIL_VIEWER: Viewer = { wholesale: false, priceTierId: null };
+export const RETAIL_VIEWER: Viewer = { wholesale: false, priceTierId: null, defaultTierId: null };
+
+/** Tier ids whose prices a viewer may need (none for retail). */
+export function viewerTierIds(viewer: Viewer): string[] {
+  if (!viewer.wholesale) return [];
+  return [...new Set([viewer.priceTierId, viewer.defaultTierId].filter((id): id is string => Boolean(id)))];
+}
+
+/**
+ * A design's trade prices for this viewer: their own tier's, or the default
+ * tier's when the design has none in their tier. Never mixes the two.
+ */
+export function tierPricesFor<T extends { priceTierId: string }>(rows: T[], viewer: Viewer): T[] {
+  if (!viewer.wholesale) return [];
+  const own = viewer.priceTierId ? rows.filter((r) => r.priceTierId === viewer.priceTierId) : [];
+  if (own.length > 0) return own.sort((a, b) => minQty(a) - minQty(b));
+  return rows.filter((r) => r.priceTierId === viewer.defaultTierId).sort((a, b) => minQty(a) - minQty(b));
+}
+
+const minQty = (row: object) => (row as { minQuantity?: number }).minQuantity ?? 0;
 
 /** Variant overrides the product's price/MRP when set. */
 export function retailPrice(

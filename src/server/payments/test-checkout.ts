@@ -4,7 +4,6 @@ import { db } from "@/lib/db";
 import type { SessionUser } from "@/lib/auth";
 import { NotFoundError, UserError } from "@/server/errors";
 import { activeGateway, testGateway } from "./gateway";
-import { isAwaitingPayment } from "./service";
 import { receiveWebhook } from "./webhooks";
 
 /**
@@ -29,7 +28,10 @@ export async function simulateTestPayment(
     select: { amount: true },
   });
   if (!attempt) throw new UserError("This payment window is out of date. Close it and try again.", 409);
-  if (!isAwaitingPayment(order.status)) throw new UserError("This order can no longer be paid.", 409);
+  // Awaiting payment, or a confirmed wholesale order paying its balance.
+  if (["CANCELLED", "RTO_IN_TRANSIT", "RTO_DELIVERED"].includes(order.status)) {
+    throw new UserError("This order can no longer be paid.", 409);
+  }
 
   const result = gateway.simulate(input.providerOrderId, attempt.amount, input.outcome);
   const delivered = await receiveWebhook({ provider: "TEST", ...result.webhook });

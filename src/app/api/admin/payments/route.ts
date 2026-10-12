@@ -3,6 +3,7 @@ import { RATE_LIMITS } from "@/lib/ratelimit";
 import { adminPaymentActionSchema } from "@/lib/validators";
 import { hasPermission } from "@/server/auth/permissions";
 import { resolveAttention, staffRetryRefund, staffSyncOrder } from "@/server/payments/admin";
+import { reviewBankTransfer } from "@/server/wholesale/bank-transfer";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,10 @@ export const POST = handler(async (request) => {
     case "retry-refund":
       if (!hasPermission(staff, "refunds.issue")) break;
       await staffRetryRefund(staff, input.refundId);
+      return ok({ ok: true });
+    case "review-transfer":
+      if (!hasPermission(staff, "payments.verify")) break;
+      await reviewBankTransfer(staff, { paymentId: input.paymentId, approve: input.approve, reason: input.reason });
       return ok({ ok: true });
   }
   return fail("You do not have access to this resource", 403);

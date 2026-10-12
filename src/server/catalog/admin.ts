@@ -148,14 +148,17 @@ export async function saveProduct(input: ProductInput, staff: SessionUser, produ
           });
         }
 
-        // Wholesale prices for the standard price tier.
+        // Wholesale prices: the standard tier, plus any other tier given its own.
         const tierId = await defaultTierId(tx);
-        await tx.wholesalePrice.deleteMany({ where: { productId: id, priceTierId: tierId } });
-        if (input.wholesalePrices.length) {
-          await tx.wholesalePrice.createMany({
-            data: input.wholesalePrices.map((w) => ({ productId: id, priceTierId: tierId, ...w })),
-          });
-        }
+        const otherTiers = await tx.priceTier.findMany({ where: { id: { not: tierId } }, select: { id: true } });
+        await tx.wholesalePrice.deleteMany({ where: { productId: id } });
+        const rows = [
+          ...input.wholesalePrices.map((w) => ({ productId: id, priceTierId: tierId, ...w })),
+          ...otherTiers.flatMap((t) =>
+            (input.wholesaleEnabled ? (input.tierPrices[t.id] ?? []) : []).map((w) => ({ productId: id, priceTierId: t.id, ...w })),
+          ),
+        ];
+        if (rows.length) await tx.wholesalePrice.createMany({ data: rows });
 
         // Attributes (fabric, occasion, …) drive the shop filters.
         await tx.productAttributeValue.deleteMany({ where: { productId: id } });

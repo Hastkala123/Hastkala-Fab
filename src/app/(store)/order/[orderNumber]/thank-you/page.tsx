@@ -4,11 +4,11 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { formatPrice } from "@/lib/money";
-import { formatDateTime, PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS } from "@/lib/utils";
+import { formatDate, formatDateTime, PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS } from "@/lib/utils";
 import { getSettings } from "@/server/settings";
 import AddressBlock from "@/components/orders/AddressBlock";
 import OrderTotals from "@/components/orders/OrderTotals";
-import PayNowButton from "@/components/payments/PayNowButton";
+import OrderPaymentBox from "@/components/orders/OrderPaymentBox";
 import PaymentConfirming from "@/components/payments/PaymentConfirming";
 import { expireOrderIfDue } from "@/server/payments/expiry";
 
@@ -36,9 +36,13 @@ export default async function ThankYouPage({
   if (!found) notFound();
   // A window that ended while nobody was looking: settle it now, not at the next scheduler run.
   await expireOrderIfDue(found.id).catch(() => false);
-  const [order, settings] = await Promise.all([
+  const [order, settings, pendingTransfers] = await Promise.all([
     db.order.findUniqueOrThrow({ where: { id: found.id }, include: { items: true } }),
     getSettings(),
+    db.payment.findMany({
+      where: { orderId: found.id, provider: "MANUAL", status: "CREATED" },
+      select: { amount: true, manualReference: true },
+    }),
   ]);
 
   const awaitingPayment = order.status === "PENDING_PAYMENT" || order.status === "PAYMENT_FAILED";
@@ -68,29 +72,30 @@ export default async function ThankYouPage({
                   ? "The payment wasn't completed in time, so the items were released. Nothing was charged."
                   : "Nothing has been charged for the items that were cancelled."
               : awaitingPayment
-                ? order.paymentDueBy
-                  ? `We're holding your items until ${formatDateTime(order.paymentDueBy)}. Complete the payment to confirm the order.`
-                  : "Complete the payment to confirm the order."
-                : `Your order is confirmed. ${settings.shipping.dispatchText.replace(/\.$/, "")}.`}
+                ? order.paymentMethod === "BANK_TRANSFER"
+                  ? "Your order is reserved. Send the bank transfer below and tell us the UTR — we confirm the order once the money arrives."
+                  : order.paymentDueBy
+                    ? `We're holding your items until ${formatDateTime(order.paymentDueBy)}. Complete the payment to confirm the order.`
+                    : "Complete the payment to confirm the order."
+                : order.paymentMethod === "CREDIT"
+                  ? `Your order is confirmed on credit${order.balanceDueAt ? ` — please pay by ${formatDate(order.balanceDueAt)}` : ""}. ${settings.shipping.dispatchText.replace(/\.$/, "")}.`
+                  : `Your order is confirmed. ${settings.shipping.dispatchText.replace(/\.$/, "")}.`}
           </p>
         </div>
 
-        {awaitingPayment && (
-          <div className="mt-6 flex flex-col items-center gap-3">
-            {confirming ? (
-              <PaymentConfirming orderNumber={order.orderNumber} />
-            ) : order.status === "PAYMENT_FAILED" ? (
-              <p className="rounded-lg bg-madder-50 px-4 py-3 text-sm text-madder-800">
-                The last payment attempt didn&apos;t go through. No money was taken — you can try again.
-              </p>
-            ) : null}
-            {order.paymentDueBy && (
-              <PayNowButton
-                orderNumber={order.orderNumber}
-                amount={order.grandTotal - order.amountPaid}
-                dueBy={order.paymentDueBy.toISOString()}
-              />
-            )}
+        {awaitingPayment && confirming && (
+          <div className="mt-6">
+            <PaymentConfirming orderNumber={order.orderNumber} />
+          </div>
+        )}
+        {order.status === "PAYMENT_FAILED" && !confirming && (
+          <p className="mt-6 rounded-lg bg-madder-50 px-4 py-3 text-sm text-madder-800">
+            The last payment attempt didn&apos;t go through. No money was taken — you can try again.
+          </p>
+        )}
+        {!confirming && (
+          <div className="mt-6">
+            <OrderPaymentBox order={order} bank={settings.wholesale} pendingTransfers={pendingTransfers} />
           </div>
         )}
 

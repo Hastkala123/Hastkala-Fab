@@ -15,6 +15,7 @@ export type CategoryRow = {
   slug: string;
   description: string;
   bottomContent: string;
+  wholesaleIntro: string;
   imageUrl: string;
   bannerImageUrl: string;
   parentId: string;
@@ -36,6 +37,7 @@ const blank = (): Omit<CategoryRow, "productCount" | "childCount" | "parentName"
   slug: "",
   description: "",
   bottomContent: "",
+  wholesaleIntro: "",
   imageUrl: "",
   bannerImageUrl: "",
   parentId: "",
@@ -272,6 +274,7 @@ function CategoryForm({
     slug: initial.slug ?? "",
     description: initial.description ?? "",
     bottomContent: initial.bottomContent ?? "",
+    wholesaleIntro: initial.wholesaleIntro ?? "",
     imageUrl: initial.imageUrl ?? "",
     bannerImageUrl: initial.bannerImageUrl ?? "",
     parentId: initial.parentId ?? "",
@@ -474,6 +477,23 @@ function CategoryForm({
                 onChange={(e) => setValues((v) => ({ ...v, bottomContent: e.target.value }))}
                 rows={6}
                 maxLength={10000}
+                className="hf-input resize-y"
+              />
+            )}
+          </Field>
+
+          <Field
+            label="Wholesale page introduction"
+            error={fields.wholesaleIntro}
+            hint={`Shown on /wholesale/${values.slug || "this-category"}. Leave blank for a standard introduction.`}
+          >
+            {(props) => (
+              <textarea
+                {...props}
+                value={values.wholesaleIntro}
+                onChange={(e) => setValues((v) => ({ ...v, wholesaleIntro: e.target.value }))}
+                rows={3}
+                maxLength={2000}
                 className="hf-input resize-y"
               />
             )}

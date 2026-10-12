@@ -3,7 +3,7 @@ import "server-only";
 import type { PrintTechnique, Prisma, PrismaClient } from "@prisma/client";
 import { variantLabel } from "@/lib/variants";
 import type { CouponDef } from "@/server/coupons/evaluate";
-import { retailPrice, wholesaleMinimum, wholesaleUnitPrice, type Viewer } from "@/server/catalog/pricing";
+import { retailPrice, tierPricesFor, wholesaleMinimum, wholesaleUnitPrice, type Viewer } from "@/server/catalog/pricing";
 import { effectiveHsnId, loadTaxBands } from "@/server/catalog/tax";
 import type { AllSettings } from "@/server/settings/schema";
 import { toQuoteSettings } from "@/server/settings";
@@ -127,9 +127,7 @@ export async function priceItems(
   }
 
   const tierPrices = (v: (typeof variants)[number]) =>
-    v.product.wholesaleEnabled && buyer.viewer.priceTierId
-      ? v.product.wholesalePrices.filter((w) => w.priceTierId === buyer.viewer.priceTierId)
-      : [];
+    v.product.wholesaleEnabled ? tierPricesFor(v.product.wholesalePrices, buyer.viewer) : [];
 
   // Coupon -----------------------------------------------------------------
   let couponInput: Parameters<typeof buildQuote>[0]["coupon"] = null;

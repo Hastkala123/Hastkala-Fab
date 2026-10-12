@@ -82,3 +82,66 @@ export async function fillBag(userId: string, variantId: string, quantity: numbe
 
 export const stockOf = async (variantId: string) =>
   (await db.productVariant.findUniqueOrThrow({ where: { id: variantId }, select: { stock: true } })).stock;
+
+/** A wholesale design: Standard tier 10+ @ ₹800, 50+ @ ₹700 (+ GST), with a Gold tier existing. */
+export async function makeWholesaleCatalogue(stock: number) {
+  const made = await makeCatalogue(stock);
+  const [standard, gold] = await Promise.all([
+    db.priceTier.create({ data: { name: "Standard", isDefault: true } }),
+    db.priceTier.create({ data: { name: "Gold" } }),
+  ]);
+  await db.product.update({ where: { id: made.product.id }, data: { wholesaleEnabled: true, wholesaleMinQty: 10 } });
+  await db.wholesalePrice.createMany({
+    data: [
+      { productId: made.product.id, priceTierId: standard.id, minQuantity: 10, unitPrice: 80_000 },
+      { productId: made.product.id, priceTierId: standard.id, minQuantity: 50, unitPrice: 70_000 },
+    ],
+  });
+  return { ...made, standard, gold };
+}
+
+/** An approved wholesale buyer on the given terms. */
+export async function makeBuyer(
+  name: string,
+  profile: {
+    priceTierId?: string | null;
+    paymentTerms?: "PREPAID" | "ADVANCE_BALANCE" | "CREDIT";
+    advancePercent?: number | null;
+    creditLimit?: number | null;
+    creditDays?: number | null;
+  } = {},
+): Promise<{ user: SessionUser; addressId: string }> {
+  const shopper = await makeShopper(name);
+  await db.user.update({
+    where: { id: shopper.user.id },
+    data: {
+      customerType: "WHOLESALE",
+      phone: `+9198${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}`,
+      wholesaleProfile: {
+        create: { businessName: `${name} Boutique`, city: "Jaipur", status: "APPROVED", ...profile },
+      },
+    },
+  });
+  return {
+    user: { ...shopper.user, customerType: "WHOLESALE", wholesaleStatus: "APPROVED" },
+    addressId: shopper.addressId,
+  };
+}
+
+export async function makeStaff(): Promise<SessionUser> {
+  const staff = await db.user.create({
+    data: { name: "Owner", email: `owner-${randomUUID().slice(0, 8)}@example.test`, isStaff: true },
+  });
+  return {
+    id: staff.id,
+    email: staff.email,
+    phone: null,
+    name: staff.name,
+    isStaff: true,
+    isOwner: true,
+    permissions: [],
+    customerType: "RETAIL",
+    wholesaleStatus: null,
+    sessionId: "staff-session",
+  };
+}

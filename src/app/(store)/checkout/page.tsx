@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { getCartView, toCartDisplay } from "@/server/cart";
-import { onlinePaymentAvailable } from "@/server/orders/checkout";
+import { paymentOptionsFor } from "@/server/orders/checkout";
+import { viewerFor } from "@/server/catalog/viewer";
+import { advanceAmount } from "@/server/wholesale/terms";
 import { getSettings } from "@/server/settings";
 import CheckoutView from "./CheckoutView";
 import { EmptyState } from "@/components/store/ProductGrid";
@@ -33,6 +35,12 @@ export default async function CheckoutPage() {
     getSettings(),
   ]);
 
+  const viewer = await viewerFor(user);
+  const { options, terms } = await paymentOptionsFor(db, user, viewer.wholesale, settings, {
+    orderTotal: online.grandTotal,
+    cod: { available: cod.cod.available, reason: cod.cod.reason, fee: cod.codFee },
+  });
+
   if (online.lines.length === 0) {
     return (
       <div className="hf-container py-12">
@@ -57,7 +65,9 @@ export default async function CheckoutPage() {
       <CheckoutView
         online={online}
         cod={cod}
-        onlineAvailable={onlinePaymentAvailable(settings)}
+        methods={options}
+        advance={advanceAmount(online.grandTotal, terms)}
+        bankHoldHours={settings.wholesale.bankTransferHoldHours}
         addresses={addresses.map((a) => ({
           id: a.id,
           fullName: a.fullName,

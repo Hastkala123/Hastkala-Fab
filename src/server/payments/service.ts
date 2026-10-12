@@ -11,7 +11,7 @@ import { changeOrderStatusTx, readAddress } from "@/server/orders/service";
 import { getSettings } from "@/server/settings";
 import { activeGateway, gatewayFor } from "./gateway";
 import { createRefundTx, flagPayment } from "./refunds";
-import { ATTEMPT_RANK, isCaptured, orderPaymentStatus } from "./status";
+import { ATTEMPT_RANK, confirmThreshold, isCaptured, orderPaymentStatus } from "./status";
 import { GatewayError, mapGatewayMethod, type GatewayName, type GatewayPayment } from "./types";
 
 /**
@@ -28,6 +28,10 @@ import { GatewayError, mapGatewayMethod, type GatewayName, type GatewayPayment }
 const SYSTEM = { type: "SYSTEM" as const, user: null };
 /** Less time than this left in the payment window: don't open the payment page. */
 export const MIN_SECONDS_TO_PAY = 30;
+/** Payment window for paying a balance (no stock is being held). */
+const BALANCE_WINDOW_SECONDS = 15 * 60;
+/** Orders whose balance can no longer be paid online. */
+const CLOSED_STATUSES: OrderStatus[] = ["CANCELLED", "RTO_IN_TRANSIT", "RTO_DELIVERED"];
 
 export const isAwaitingPayment = (status: OrderStatus) => status === "PENDING_PAYMENT" || status === "PAYMENT_FAILED";
 
@@ -44,7 +48,11 @@ export type CheckoutSession = {
   secondsLeft: number;
 };
 
-/** "Pay now": opens (or reopens) payment for an order awaiting it. */
+/**
+ * "Pay now": opens (or reopens) payment for an order awaiting it — the whole
+ * amount, or the advance on "advance + balance" terms — or for the balance of
+ * a confirmed wholesale order.
+ */
 export async function startPayment(user: SessionUser, orderNumber: string): Promise<CheckoutSession> {
   const settings = await getSettings();
   const gateway = activeGateway();
@@ -65,21 +73,28 @@ export async function startPayment(user: SessionUser, orderNumber: string): Prom
       contactEmail: true,
       contactPhone: true,
       shippingAddress: true,
+      advanceAmount: true,
     },
   });
   if (!order) throw new NotFoundError("Order not found");
   if (order.paymentMethod === "COD") throw new UserError("This is a cash-on-delivery order, so there's nothing to pay now.", 409);
-  if (!isAwaitingPayment(order.status)) {
+  const kept = order.amountPaid - order.amountRefunded;
+  const awaiting = isAwaitingPayment(order.status);
+  if (!awaiting && (CLOSED_STATUSES.includes(order.status) || kept >= order.grandTotal)) {
     throw new UserError(
-      order.amountPaid > 0 ? "This order is already paid." : "This order can no longer be paid. Refresh to see its status.",
+      kept >= order.grandTotal ? "This order is already paid." : "This order can no longer be paid. Refresh to see its status.",
       409,
     );
   }
-  const secondsLeft = order.paymentDueBy ? Math.floor((order.paymentDueBy.getTime() - Date.now()) / 1000) : 0;
-  if (secondsLeft < MIN_SECONDS_TO_PAY) {
-    throw new UserError("The time to pay for this order has run out, so the items are being released. Please place the order again.", 409);
+  let secondsLeft = BALANCE_WINDOW_SECONDS;
+  if (awaiting) {
+    secondsLeft = order.paymentDueBy ? Math.floor((order.paymentDueBy.getTime() - Date.now()) / 1000) : 0;
+    if (secondsLeft < MIN_SECONDS_TO_PAY) {
+      throw new UserError("The time to pay for this order has run out, so the items are being released. Please place the order again.", 409);
+    }
   }
-  const amount = order.grandTotal - (order.amountPaid - order.amountRefunded);
+  // Awaiting: enough to confirm (the advance, or everything). Confirmed: the balance.
+  const amount = (awaiting ? confirmThreshold(order) : order.grandTotal) - kept;
   if (amount <= 0) throw new UserError("This order is already paid.", 409);
 
   let payment;
@@ -89,7 +104,7 @@ export async function startPayment(user: SessionUser, orderNumber: string): Prom
         // One opener at a time per order, so two tabs can't create two gateway orders.
         await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${order.id} FOR UPDATE`;
         const current = await tx.order.findUniqueOrThrow({ where: { id: order.id }, select: { status: true } });
-        if (!isAwaitingPayment(current.status)) {
+        if (awaiting ? !isAwaitingPayment(current.status) : CLOSED_STATUSES.includes(current.status)) {
           throw new UserError("This order can no longer be paid. Refresh to see its status.", 409);
         }
         if (current.status === "PAYMENT_FAILED") {
@@ -139,7 +154,7 @@ export async function startPayment(user: SessionUser, orderNumber: string): Prom
     amount,
     orderNumber,
     storeName: settings["store.profile"].displayName,
-    description: `Order ${orderNumber}`,
+    description: awaiting && amount < order.grandTotal - kept ? `Advance for order ${orderNumber}` : awaiting ? `Order ${orderNumber}` : `Balance for order ${orderNumber}`,
     prefill: {
       name: address?.fullName ?? user.name,
       email: order.contactEmail ?? user.email ?? "",
@@ -390,14 +405,29 @@ export async function recordGatewayPayment(provider: GatewayName, payment: Gatew
           await flagPayment(tx, row.id, `Extra payment of ${formatPrice(excess)} received — refund started automatically`);
         }
         if (isAwaitingPayment(order.status)) {
-          if (payment.amount >= stillDue) {
+          const keptAfter = keptBefore + Math.min(payment.amount, stillDue);
+          const needed = confirmThreshold(order);
+          if (keptAfter >= needed) {
             await changeOrderStatusTx(tx, order.id, "CONFIRMED", SYSTEM, {
               expectedFrom: order.status,
-              note: `Payment of ${formatPrice(Math.min(payment.amount, stillDue))} received${methodLabel}.`,
+              note:
+                keptAfter >= order.grandTotal
+                  ? `Payment of ${formatPrice(Math.min(payment.amount, stillDue))} received${methodLabel}.`
+                  : `Advance of ${formatPrice(payment.amount)} received${methodLabel}. The balance of ${formatPrice(order.grandTotal - keptAfter)} is due before dispatch.`,
             });
           } else {
-            await flagPayment(tx, row.id, `Paid ${formatPrice(payment.amount)}, less than the ${formatPrice(stillDue)} due`);
+            await flagPayment(tx, row.id, `Paid ${formatPrice(payment.amount)}, less than the ${formatPrice(needed - keptBefore)} needed to confirm`);
           }
+        } else if (payment.amount > 0) {
+          await tx.orderStatusHistory.create({
+            data: {
+              orderId: order.id,
+              fromStatus: order.status,
+              toStatus: order.status,
+              note: `Payment of ${formatPrice(Math.min(payment.amount, stillDue))} received${methodLabel}.`,
+              actorType: "SYSTEM",
+            },
+          });
         }
       }
 

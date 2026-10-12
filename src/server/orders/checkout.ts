@@ -11,6 +11,8 @@ import { takeStock } from "@/server/inventory/stock";
 import { formatOrderNumber } from "@/server/numbering/format";
 import { nextSequence } from "@/server/numbering/sequence";
 import { activeGateway } from "@/server/payments/gateway";
+import { buyerTerms, outstandingBalance } from "@/server/wholesale/account";
+import { advanceAmount, paymentOptions, type BuyerTerms, type MethodOption } from "@/server/wholesale/terms";
 import { getSettings } from "@/server/settings";
 import { priceItems } from "./pricing";
 
@@ -31,6 +33,37 @@ export function onlinePaymentAvailable(settings: { checkout: { onlinePaymentsEna
   return settings.checkout.onlinePaymentsEnabled && activeGateway() !== null;
 }
 
+type Settings = Awaited<ReturnType<typeof getSettings>>;
+
+/**
+ * The ways this shopper may pay for an order of `orderTotal`: retail buyers
+ * get online + COD; approved wholesale buyers also get bank transfer and, on
+ * credit terms, "buy on credit" while the order fits their credit limit.
+ */
+export async function paymentOptionsFor(
+  client: Prisma.TransactionClient | typeof db,
+  user: SessionUser,
+  wholesale: boolean,
+  settings: Settings,
+  quote: { orderTotal: number; cod: { available: boolean; reason: string | null; fee: number } },
+): Promise<{ options: MethodOption[]; terms: BuyerTerms | null }> {
+  const terms = wholesale ? await buyerTerms(client, user.id) : null;
+  const creditRemaining =
+    terms?.terms === "CREDIT" && terms.creditLimit != null
+      ? terms.creditLimit - (await outstandingBalance(client, user.id))
+      : null;
+  const options = paymentOptions({
+    wholesale: terms,
+    onlineAvailable: onlinePaymentAvailable(settings),
+    cod: quote.cod,
+    bankTransferEnabled: settings.wholesale.bankTransferEnabled,
+    wholesaleCodAllowed: settings.wholesale.allowCod,
+    creditRemaining,
+    orderTotal: quote.orderTotal,
+  });
+  return { options, terms };
+}
+
 /**
  * Turns the shopper's bag into an order, all or nothing.
  *
@@ -41,13 +74,15 @@ export function onlinePaymentAvailable(settings: { checkout: { onlinePaymentsEna
  * sequence, and empty the bag. Any failure rolls every step back.
  */
 export async function placeOrder(user: SessionUser, input: PlaceOrderInput): Promise<PlacedOrder> {
-  const isCod = input.paymentMethod === "COD";
-  if (!isCod && !ONLINE_METHODS.includes(input.paymentMethod)) {
+  const method = input.paymentMethod;
+  const isCod = method === "COD";
+  const isOnline = ONLINE_METHODS.includes(method);
+  if (!isCod && !isOnline && method !== "BANK_TRANSFER" && method !== "CREDIT") {
     throw new UserError("Please choose how you'd like to pay.");
   }
   const [settings, viewer] = await Promise.all([getSettings(), viewerFor(user)]);
-  if (!isCod && !onlinePaymentAvailable(settings)) {
-    throw new UserError("Online payment isn't available right now. Please choose cash on delivery or try again later.", 409);
+  if (isOnline && !onlinePaymentAvailable(settings)) {
+    throw new UserError("Online payment isn't available right now. Please choose another way to pay or try again later.", 409);
   }
 
   try {
@@ -101,8 +136,15 @@ export async function placeOrder(user: SessionUser, input: PlaceOrderInput): Pro
         if (cart.couponCode && pricing.couponError) {
           throw new UserError(`Coupon ${cart.couponCode}: ${pricing.couponError} Remove it to continue.`, 409);
         }
-        if (isCod && !quote.cod.available) throw new UserError(quote.cod.reason ?? "Cash on delivery isn't available.", 409);
         if (quote.grandTotal <= 0) throw new UserError("Your order total must be more than ₹0.", 409);
+        // The same rules the checkout page showed: method offered and usable for this buyer and total.
+        const { options, terms } = await paymentOptionsFor(tx, user, viewer.wholesale, settings, {
+          orderTotal: quote.grandTotal,
+          cod: { available: quote.cod.available, reason: quote.cod.reason, fee: quote.codFee },
+        });
+        const chosen = options.find((o) => o.value === method);
+        if (!chosen) throw new UserError("This way of paying isn't available for your account. Please choose another.", 409);
+        if (!chosen.available) throw new UserError(chosen.reason ?? "This way of paying isn't available right now.", 409);
 
         // Chosen here so the stock ledger rows can point at the order.
         const orderId = `c${randomBytes(12).toString("hex")}`;
@@ -132,7 +174,14 @@ export async function placeOrder(user: SessionUser, input: PlaceOrderInput): Pro
 
         const orderNumber = formatOrderNumber(await nextSequence(tx, "order"));
         const now = new Date();
-        const status = isCod ? "CONFIRMED" : "PENDING_PAYMENT";
+        // COD and credit are confirmed now; online and bank transfer once paid.
+        const confirmedNow = isCod || method === "CREDIT";
+        const status = confirmedNow ? "CONFIRMED" : "PENDING_PAYMENT";
+        const holdMs =
+          method === "BANK_TRANSFER"
+            ? settings.wholesale.bankTransferHoldHours * 3_600_000
+            : settings.checkout.paymentWindowMinutes * 60_000;
+        const advance = confirmedNow ? 0 : advanceAmount(quote.grandTotal, terms);
         const addressSnapshot = {
           fullName: address.fullName,
           phone: address.phone,
@@ -157,8 +206,11 @@ export async function placeOrder(user: SessionUser, input: PlaceOrderInput): Pro
             idempotencyKey: input.idempotencyKey,
             status,
             paymentStatus: "PENDING",
-            paymentMethod: input.paymentMethod,
-            paymentDueBy: isCod ? null : new Date(now.getTime() + settings.checkout.paymentWindowMinutes * 60_000),
+            paymentMethod: method,
+            paymentDueBy: confirmedNow ? null : new Date(now.getTime() + holdMs),
+            paymentTerms: terms?.terms ?? "PREPAID",
+            advanceAmount: advance,
+            balanceDueAt: method === "CREDIT" && terms ? new Date(now.getTime() + terms.creditDays * 86_400_000) : null,
             shippingAddress: addressSnapshot,
             billingAddress: addressSnapshot,
             contactEmail: user.email,
@@ -182,7 +234,7 @@ export async function placeOrder(user: SessionUser, input: PlaceOrderInput): Pro
             couponCode: quote.coupon?.code ?? null,
             customerNote: input.customerNote,
             giftMessage: cart.giftWrap ? cart.giftMessage : null,
-            confirmedAt: isCod ? now : null,
+            confirmedAt: confirmedNow ? now : null,
             placedAt: now,
             items: {
               create: pricing.lines.map((line) => ({
@@ -211,7 +263,13 @@ export async function placeOrder(user: SessionUser, input: PlaceOrderInput): Pro
               create: {
                 fromStatus: null,
                 toStatus: status,
-                note: isCod ? "Order placed — cash on delivery" : "Order placed — waiting for payment",
+                note: isCod
+                  ? "Order placed — cash on delivery"
+                  : method === "CREDIT"
+                    ? `Order placed on credit — payment due within ${terms?.creditDays ?? 30} days`
+                    : method === "BANK_TRANSFER"
+                      ? `Order placed — waiting for your bank transfer${advance ? " of the advance" : ""}`
+                      : `Order placed — waiting for ${advance ? "the advance " : ""}payment`,
                 actorType: "CUSTOMER",
                 actorId: user.id,
               },

@@ -90,6 +90,47 @@ export const SETTING_SCHEMAS = {
     minOrderValue: paise.default(0),
     maxQuantityPerLine: z.number().int().min(1).max(100_000).default(1_000),
     requireGstin: z.boolean().default(true),
+    /** Advance taken at checkout on "advance + balance" terms, unless the buyer has their own %. */
+    advancePercent: z.number().int().min(1).max(99).default(30),
+    /** Days to pay on credit terms, unless the buyer has their own. */
+    creditDays: z.number().int().min(1).max(180).default(30),
+    allowCod: z.boolean().default(false),
+    bankTransferEnabled: z.boolean().default(true),
+    /** How long stock is held for an order waiting for a bank transfer. */
+    bankTransferHoldHours: z.number().int().min(1).max(14 * 24).default(48),
+    bankAccountName: z.string().trim().max(120).default(""),
+    bankAccountNumber: z.string().trim().max(34).default(""),
+    bankIfsc: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^$|^[A-Z]{4}0[A-Z0-9]{6}$/, "Enter an 11-character IFSC like HDFC0001234")
+      .default(""),
+    bankName: z.string().trim().max(120).default(""),
+    upiId: z.string().trim().max(80).default(""),
+    landingHeadline: z.string().trim().max(120).default("Sanganeri hand-block prints, wholesale from Jaipur"),
+    landingIntro: z
+      .string()
+      .trim()
+      .max(1500)
+      .default(
+        "Kurtis, salwar suits, sarees and Jaipuri cotton bedsheets, printed by hand in Sanganer. Boutiques, resellers and retail stores across India buy direct from us at trade prices, with GST invoices and dispatch from Jaipur.",
+      ),
+    moqText: z.string().trim().max(300).default("Minimum quantities are shown on each design — sizes and colours combine towards them."),
+    /** One question per line: "Question? | Answer". */
+    faq: z
+      .string()
+      .trim()
+      .max(6000)
+      .default(
+        [
+          "Who can buy wholesale? | Boutiques, retail shops, resellers and online sellers. Apply with your business details; most accounts are approved within one working day.",
+          "Do I need a GSTIN? | A GSTIN lets you claim input tax credit on our GST invoice. Without one, tell us about your business and we'll review it.",
+          "Is there a minimum order? | Each design shows its minimum quantity. Sizes and colours of the same design count together.",
+          "How do I pay? | Online (UPI, cards, net banking) or bank transfer. Regular buyers can be offered advance-and-balance or credit terms.",
+          "How fast do you dispatch? | Ready stock leaves Jaipur in 1–3 working days. Custom colours and bulk prints take longer — ask us first.",
+        ].join("\n"),
+      ),
   }),
 
   seo: z.object({

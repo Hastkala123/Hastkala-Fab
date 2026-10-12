@@ -88,10 +88,23 @@ export default async function Footer() {
         </div>
 
         <div className="mt-10 flex flex-col gap-4 border-t border-white/10 pt-8 text-xs text-cotton-300/70 sm:flex-row sm:items-center sm:justify-between">
-          <p>
-            © {new Date().getFullYear()} Hastkala Fab. All rights reserved. Handcrafted in
-            Sanganer, Jaipur, Rajasthan.
-          </p>
+          <div className="space-y-1">
+            <p>
+              © {new Date().getFullYear()} Hastkala Fab. All rights reserved. Handcrafted in
+              Sanganer, Jaipur, Rajasthan.
+            </p>
+            <p>
+              Designed and developed by{" "}
+              <a
+                href="https://naigrowth.com"
+                target="_blank"
+                rel="noopener"
+                className="font-semibold text-cotton-200 underline-offset-2 transition hover:text-cotton-50 hover:underline"
+              >
+                Naigrowth
+              </a>
+            </p>
+          </div>
           <p className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <Link href="/privacy-policy" className="transition hover:text-cotton-50">Privacy</Link>
             <Link href="/terms" className="transition hover:text-cotton-50">Terms</Link>

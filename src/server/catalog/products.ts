@@ -4,7 +4,7 @@ import { cache } from "react";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getSettings } from "@/server/settings";
-import { retailPrice, wholesaleFromPrice, type Viewer } from "./pricing";
+import { retailPrice, tierPricesFor, viewerTierIds, wholesaleFromPrice, type Viewer } from "./pricing";
 import { searchProductIds } from "./search";
 
 export const PAGE_SIZE = 24;
@@ -28,7 +28,6 @@ export function liveProductWhere(now = new Date()): Prisma.ProductWhereInput {
   };
 }
 
-const NO_TIER = "-";
 
 function cardSelect(viewer: Viewer) {
   return {
@@ -54,8 +53,8 @@ function cardSelect(viewer: Viewer) {
       select: { stock: true, price: true, mrp: true },
     },
     wholesalePrices: {
-      where: { priceTierId: viewer.wholesale ? (viewer.priceTierId ?? NO_TIER) : NO_TIER },
-      select: { minQuantity: true, unitPrice: true },
+      where: { priceTierId: { in: viewerTierIds(viewer) } },
+      select: { priceTierId: true, minQuantity: true, unitPrice: true },
     },
   } satisfies Prisma.ProductSelect;
 }
@@ -116,7 +115,9 @@ async function cards(where: Prisma.ProductWhereInput, viewer: Viewer, args: {
     db.product.findMany({ where, select: cardSelect(viewer), ...args }),
     getSettings(),
   ]);
-  return rows.map((row) => toCard(row, !settings.tax.wholesalePricesIncludeTax));
+  return rows.map((row) =>
+    toCard({ ...row, wholesalePrices: tierPricesFor(row.wholesalePrices, viewer) }, !settings.tax.wholesalePricesIncludeTax),
+  );
 }
 
 /** Cards for specific products, kept in the given order. */
@@ -408,13 +409,14 @@ export async function getProductPage(slug: string, viewer: Viewer, options: { pr
         include: { attribute: { select: { key: true, label: true, unit: true, position: true } } },
       },
       wholesalePrices: {
-        where: { priceTierId: viewer.wholesale ? (viewer.priceTierId ?? NO_TIER) : NO_TIER },
+        where: { priceTierId: { in: viewerTierIds(viewer) } },
         orderBy: { minQuantity: "asc" },
-        select: { minQuantity: true, unitPrice: true },
+        select: { priceTierId: true, minQuantity: true, unitPrice: true },
       },
     },
   });
   if (!product) return null;
+  product.wholesalePrices = tierPricesFor(product.wholesalePrices, viewer);
 
   const now = new Date();
   const live =

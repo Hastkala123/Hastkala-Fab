@@ -29,6 +29,9 @@ export type VariantRow = {
   isActive: boolean;
 };
 
+type PriceBreak = { minQuantity: string; unitPrice: string };
+export type TierOption = { id: string; name: string; isDefault: boolean };
+
 export type ProductFormValues = {
   id?: string;
   title: string;
@@ -44,7 +47,9 @@ export type ProductFormValues = {
   mrp: string;
   wholesaleEnabled: boolean;
   wholesaleMinQty: string;
-  wholesalePrices: { minQuantity: string; unitPrice: string }[];
+  wholesalePrices: PriceBreak[];
+  /** Other tiers' own prices (tier id → breaks). */
+  tierPrices: Record<string, PriceBreak[]>;
   weightGrams: string;
   careInstructions: string;
   isReturnable: boolean;
@@ -100,6 +105,7 @@ export const emptyProduct: ProductFormValues = {
   wholesaleEnabled: false,
   wholesaleMinQty: "10",
   wholesalePrices: [],
+  tierPrices: {},
   weightGrams: "",
   careInstructions: "Hand wash separately in cold water. Do not bleach. Dry in shade.",
   isReturnable: true,
@@ -143,12 +149,14 @@ export default function ProductForm({
   hsnCodes,
   attributes,
   wholesalePlusGst,
+  tiers,
 }: {
   initial: ProductFormValues;
   categories: CategoryOption[];
   hsnCodes: HsnOption[];
   attributes: AttributeOption[];
   wholesalePlusGst: boolean;
+  tiers: TierOption[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -237,6 +245,9 @@ export default function ProductForm({
       wholesaleEnabled: values.wholesaleEnabled,
       wholesaleMinQty: values.wholesaleMinQty,
       wholesalePrices: values.wholesaleEnabled ? values.wholesalePrices : [],
+      tierPrices: values.wholesaleEnabled
+        ? Object.fromEntries(Object.entries(values.tierPrices).filter(([, rows]) => rows.length > 0))
+        : {},
       weightGrams: values.weightGrams,
       careInstructions: values.careInstructions,
       isReturnable: values.isReturnable,
@@ -552,6 +563,61 @@ export default function ProductForm({
                 >
                   + Add a price break
                 </button>
+
+                {tiers.filter((t) => !t.isDefault).length > 0 && (
+                  <div className="space-y-3 border-t border-cotton-200 pt-4">
+                    <p className="text-xs text-slate-500">
+                      Other price tiers (optional). A tier left empty pays the {tiers.find((t) => t.isDefault)?.name ?? "standard"} prices above.
+                    </p>
+                    {fields.tierPrices && <p className="text-xs font-medium text-madder-600">{fields.tierPrices}</p>}
+                    {tiers
+                      .filter((t) => !t.isDefault)
+                      .map((tier) => {
+                        const rows = values.tierPrices[tier.id] ?? [];
+                        const setRows = (next: PriceBreak[]) =>
+                          setValues((v) => ({ ...v, tierPrices: { ...v.tierPrices, [tier.id]: next } }));
+                        return (
+                          <details key={tier.id} open={rows.length > 0} className="rounded-lg border border-cotton-300 p-3">
+                            <summary className="cursor-pointer text-sm font-semibold text-indigo-ink-900">
+                              {tier.name} {rows.length > 0 ? `· ${rows.length} price${rows.length === 1 ? "" : "s"}` : "· uses standard prices"}
+                            </summary>
+                            <div className="mt-3 space-y-2.5">
+                              {rows.map((row, index) => (
+                                <div key={index} className="flex items-end gap-2.5">
+                                  <MiniInput
+                                    label="From pieces"
+                                    type="number"
+                                    value={row.minQuantity}
+                                    onChange={(minQuantity) => setRows(rows.map((r, i) => (i === index ? { ...r, minQuantity } : r)))}
+                                  />
+                                  <MiniInput
+                                    label={`Price per piece ₹${wholesalePlusGst ? " (before GST)" : ""}`}
+                                    type="number"
+                                    value={row.unitPrice}
+                                    onChange={(unitPrice) => setRows(rows.map((r, i) => (i === index ? { ...r, unitPrice } : r)))}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setRows(rows.filter((_, i) => i !== index))}
+                                    className="pb-2 text-xs font-semibold text-madder-600"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() => setRows([...rows, { minQuantity: rows.length === 0 ? values.wholesaleMinQty || "10" : "", unitPrice: "" }])}
+                                className="hf-btn hf-btn-outline py-1 text-xs"
+                              >
+                                + Add a {tier.name} price
+                              </button>
+                            </div>
+                          </details>
+                        );
+                      })}
+                  </div>
+                )}
               </div>
             )}
           </section>

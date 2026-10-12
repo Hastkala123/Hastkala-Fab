@@ -39,6 +39,7 @@ export default async function AdminDashboard() {
     settings,
     paymentFlags,
     failedRefunds,
+    newInquiries,
   ] = await Promise.all([
     db.order.aggregate({ where: { status: { notIn: [...SOLD.notIn] } }, _sum: { grandTotal: true }, _count: { id: true } }),
     db.order.aggregate({
@@ -75,6 +76,7 @@ export default async function AdminDashboard() {
     getSettings(),
     db.payment.count({ where: { attentionAt: { not: null } } }),
     db.refund.count({ where: { status: "FAILED" } }),
+    db.wholesaleInquiry.count({ where: { status: "NEW" } }),
   ]);
   const lowStock = lowStockRows;
   const gateway = gatewayStatus();
@@ -108,7 +110,11 @@ export default async function AdminDashboard() {
     },
     pendingWholesale > 0 && {
       label: `${pendingWholesale} wholesale account${pendingWholesale === 1 ? "" : "s"} to verify`,
-      href: "/admin/customers?filter=pending-wholesale",
+      href: "/admin/wholesale",
+    },
+    newInquiries > 0 && {
+      label: `${newInquiries} new wholesale enquir${newInquiries === 1 ? "y" : "ies"} to call back`,
+      href: "/admin/wholesale?tab=inquiries",
     },
     pendingReviews > 0 && {
       label: `${pendingReviews} review${pendingReviews === 1 ? "" : "s"} to moderate`,

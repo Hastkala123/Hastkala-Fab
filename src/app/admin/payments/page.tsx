@@ -14,6 +14,7 @@ import {
 import { requireStaffPage } from "@/server/auth/page-guard";
 import { gatewayStatus } from "@/server/payments/gateway";
 import PaymentActionButton from "@/components/admin/PaymentActionButton";
+import TransferReview from "@/components/admin/TransferReview";
 
 export const metadata: Metadata = { title: "Payments" };
 export const dynamic = "force-dynamic";
@@ -88,10 +89,16 @@ export default async function AdminPaymentsPage({ searchParams }: { searchParams
                   <span className="ml-2 text-slate-500">{formatPrice(payment.amount)}</span>
                   <p className="mt-1 text-turmeric-900">{payment.attentionReason}</p>
                   <p className="mt-0.5 text-xs text-slate-400">
-                    {payment.providerPaymentId ?? payment.providerOrderId} · flagged {formatDateTime(payment.attentionAt!)}
+                    {payment.manualReference ? `UTR ${payment.manualReference}` : (payment.providerPaymentId ?? payment.providerOrderId)} · flagged{" "}
+                    {formatDateTime(payment.attentionAt!)}
                   </p>
+                  {payment.provider === "MANUAL" && payment.status === "CREATED" && (
+                    <TransferReview paymentId={payment.id} amount={payment.amount} reference={payment.manualReference} />
+                  )}
                 </div>
-                <PaymentActionButton body={{ action: "resolve", paymentId: payment.id }} label="Mark resolved" />
+                {!(payment.provider === "MANUAL" && payment.status === "CREATED") && (
+                  <PaymentActionButton body={{ action: "resolve", paymentId: payment.id }} label="Mark resolved" />
+                )}
               </li>
             ))}
           </ul>
@@ -221,7 +228,7 @@ export default async function AdminPaymentsPage({ searchParams }: { searchParams
                       {payment.failureReason && <p className="mt-1 text-xs text-madder-700">{payment.failureReason}</p>}
                     </td>
                     <td className="px-4 py-2.5 text-slate-600">
-                      {payment.provider === "TEST" ? "Test · " : ""}
+                      {payment.provider === "TEST" ? "Test · " : payment.provider === "MANUAL" ? "Transfer · " : ""}
                       {payment.method ? (PAYMENT_METHOD_LABELS[payment.method] ?? payment.method) : "—"}
                     </td>
                     <td className="px-4 py-2.5 text-right font-semibold">{formatPrice(payment.amount)}</td>

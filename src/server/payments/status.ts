@@ -37,3 +37,11 @@ export const ATTEMPT_RANK: Record<PaymentAttemptStatus, number> = {
 };
 
 export const isCaptured = (status: PaymentAttemptStatus) => ATTEMPT_RANK[status] >= ATTEMPT_RANK.CAPTURED;
+
+/**
+ * What must be paid before an awaiting order is confirmed: the advance on
+ * "advance + balance" terms, otherwise the whole order.
+ */
+export function confirmThreshold(order: { grandTotal: number; advanceAmount: number }): number {
+  return order.advanceAmount > 0 && order.advanceAmount < order.grandTotal ? order.advanceAmount : order.grandTotal;
+}

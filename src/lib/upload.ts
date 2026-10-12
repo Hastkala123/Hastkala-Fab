@@ -1,6 +1,6 @@
 import "server-only";
 
-import { isValidStorageKey, savePublicFile } from "@/server/storage";
+import { isValidStorageKey, savePrivateFile, savePublicFile } from "@/server/storage";
 
 /**
  * Secure image ingestion for the admin portal and review photos.
@@ -79,6 +79,39 @@ export async function saveUploadedImage(file: File, folder: UploadFolder): Promi
 
   const saved = await savePublicFile(folder, signature.ext, buffer);
   return { ok: true, ...saved, bytes: buffer.length, mime: signature.mime };
+}
+
+/**
+ * A private business document (GST certificate, shop photo, visiting card):
+ * JPG, PNG, WebP or PDF, checked by its bytes, saved where the public can't
+ * reach it.
+ */
+export async function savePrivateDocument(
+  file: File,
+  folder: string,
+): Promise<{ ok: true; storageKey: string; bytes: number; mime: string; fileName: string } | { ok: false; error: string }> {
+  if (!(file instanceof File)) return { ok: false, error: "No file provided" };
+  if (file.size === 0) return { ok: false, error: "File is empty" };
+  if (file.size > MAX_FILE_BYTES) {
+    return { ok: false, error: `"${sanitiseForMessage(file.name)}" is larger than ${MAX_FILE_BYTES / 1024 / 1024} MB` };
+  }
+  const buffer = Buffer.from(await file.arrayBuffer());
+  if (buffer.length > MAX_FILE_BYTES) return { ok: false, error: "File exceeds the maximum allowed size" };
+
+  const isPdf = buffer.length > 5 && buffer.toString("ascii", 0, 5) === "%PDF-";
+  const image = SIGNATURES.find((sig) => ["jpg", "png", "webp"].includes(sig.ext) && sig.test(buffer));
+  if (!isPdf && !image) return { ok: false, error: "Upload a PDF, JPG, PNG or WebP file" };
+  if (!isPdf && looksLikeMarkup(buffer)) return { ok: false, error: "File rejected: embedded markup detected" };
+
+  const ext = isPdf ? "pdf" : image!.ext;
+  const { storageKey } = await savePrivateFile(folder, ext, buffer);
+  return {
+    ok: true,
+    storageKey,
+    bytes: buffer.length,
+    mime: isPdf ? "application/pdf" : image!.mime,
+    fileName: sanitiseForMessage(file.name),
+  };
 }
 
 function sanitiseForMessage(name: string): string {

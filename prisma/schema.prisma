@@ -167,6 +167,8 @@ enum PaymentMethod {
   COD
   BANK_TRANSFER
   STORE_CREDIT
+  /// Approved wholesale buyers on credit terms: pay later, within their credit days.
+  CREDIT
 }
 
 enum PaymentProvider {
@@ -536,9 +538,16 @@ model WholesaleProfile {
   gstinVerifiedAt DateTime?
   /// "Boutique", "Retail shop", "Reseller", "Online seller", …
   businessType    String?
+  addressLine     String?
   city            String?
   state           String?
+  pincode         String?
+  /// "₹50,000 – ₹2 lakh a month", as the buyer described it.
+  expectedVolume  String?
+  /// Instagram / website, to see the shop.
+  socialUrl       String?
   status          WholesaleStatus       @default(PENDING)
+  submittedAt     DateTime              @default(now())
   rejectionReason String?
   reviewedById    String?
   reviewedAt      DateTime?
@@ -547,8 +556,10 @@ model WholesaleProfile {
   paymentTerms    WholesalePaymentTerms @default(PREPAID)
   /// For ADVANCE_BALANCE terms, e.g. 30 (%).
   advancePercent  Int?
-  /// For CREDIT terms, in paise.
+  /// For CREDIT terms, in paise (null = no limit).
   creditLimit     Int?
+  /// For CREDIT terms: days to pay after the order is placed.
+  creditDays      Int?
   staffNotes      String?
   documents       WholesaleDocument[]
   createdAt       DateTime              @default(now())
@@ -675,6 +686,8 @@ model Category {
   description     String?
   /// Long copy / FAQs shown below the grid.
   bottomContent   String?
+  /// Intro on the category's wholesale page (/wholesale/kurtis).
+  wholesaleIntro  String?
   imageUrl        String?
   bannerImageUrl  String?
   parentId        String?
@@ -1155,6 +1168,13 @@ model Order {
   paymentMethod PaymentMethod
   /// Unpaid prepaid orders are cancelled and their stock released after this (fixes C3).
   paymentDueBy  DateTime?
+  /// Wholesale terms the order was placed on (snapshot).
+  paymentTerms  WholesalePaymentTerms @default(PREPAID)
+  /// Paid before the order is confirmed: 0 = the full amount; otherwise the
+  /// advance on ADVANCE_BALANCE terms (the rest is due before dispatch).
+  advanceAmount Int                   @default(0)
+  /// When the unpaid balance is due (credit terms).
+  balanceDueAt  DateTime?
 
   // Snapshots ----------------------------------------------------------------
   shippingAddress        Json

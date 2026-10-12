@@ -230,6 +230,7 @@ export const categorySchema = z.object({
   slug: slugSchema,
   description: optionalText(2000, "Description"),
   bottomContent: optionalText(10_000, "Bottom-of-page text"),
+  wholesaleIntro: optionalText(2000, "Wholesale page introduction"),
   imageUrl: optionalImageUrl,
   bannerImageUrl: optionalImageUrl,
   parentId: z.union([z.literal(""), z.null(), z.undefined(), cuidSchema]).transform((v) => v || null),
@@ -272,6 +273,12 @@ export const variantInputSchema = z
     path: ["mrp"],
   });
 
+/** One wholesale quantity break: from N pieces, ₹ per piece. */
+const priceBreakSchema = z.object({
+  minQuantity: z.coerce.number().int().min(1).max(100_000),
+  unitPrice: rupeesSchema.refine((v) => v > 0, "Enter the wholesale price"),
+});
+
 export const productSchema = z
   .object({
     title: safeText(3, 160, "Product name"),
@@ -287,15 +294,9 @@ export const productSchema = z
     mrp: rupeesSchema.refine((v) => v > 0, "Enter the MRP"),
     wholesaleEnabled: z.boolean().default(false),
     wholesaleMinQty: z.coerce.number().int().min(1).max(100_000).default(1),
-    wholesalePrices: z
-      .array(
-        z.object({
-          minQuantity: z.coerce.number().int().min(1).max(100_000),
-          unitPrice: rupeesSchema.refine((v) => v > 0, "Enter the wholesale price"),
-        }),
-      )
-      .max(10)
-      .default([]),
+    wholesalePrices: z.array(priceBreakSchema).max(10).default([]),
+    /** Optional prices for other tiers (tier id → price breaks); empty = that tier pays the standard prices. */
+    tierPrices: z.record(cuidSchema, z.array(priceBreakSchema).max(10)).default({}),
     weightGrams: z.union([z.literal(""), z.null(), z.undefined(), z.coerce.number().int().min(1).max(100_000)]).transform((v) => (v === "" || v == null ? null : v)),
     careInstructions: optionalText(1000, "Care instructions"),
     isReturnable: z.boolean().default(true),
@@ -336,6 +337,10 @@ export const productSchema = z
   .refine((d) => new Set(d.wholesalePrices.map((w) => w.minQuantity)).size === d.wholesalePrices.length, {
     message: "Two wholesale prices have the same minimum quantity",
     path: ["wholesalePrices"],
+  })
+  .refine((d) => Object.values(d.tierPrices).every((rows) => new Set(rows.map((w) => w.minQuantity)).size === rows.length), {
+    message: "Two prices in the same tier have the same minimum quantity",
+    path: ["tierPrices"],
   });
 
 // ---------------------------------------------------------------------------
@@ -369,7 +374,7 @@ export const giftWrapSchema = z.object({
 
 export const checkoutSchema = z.object({
   addressId: cuidSchema,
-  paymentMethod: z.enum(["COD", "UPI", "CARD", "NETBANKING"]),
+  paymentMethod: z.enum(["COD", "UPI", "CARD", "NETBANKING", "BANK_TRANSFER", "CREDIT"], { message: "Choose how you'd like to pay" }),
   customerNote: optionalText(500, "Note"),
   idempotencyKey: z.string().uuid("Please refresh the page and try again"),
 });
@@ -539,4 +544,90 @@ export const adminPaymentActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("sync"), orderId: z.string().min(1).max(40) }),
   z.object({ action: z.literal("resolve"), paymentId: z.string().min(1).max(40), note: z.string().trim().max(300).nullish() }),
   z.object({ action: z.literal("retry-refund"), refundId: z.string().min(1).max(40) }),
+  z.object({
+    action: z.literal("review-transfer"),
+    paymentId: z.string().min(1).max(40),
+    approve: z.boolean(),
+    reason: optionalText(300, "Reason"),
+  }),
 ]);
+
+// ---------------------------------------------------------------------------
+// Wholesale
+// ---------------------------------------------------------------------------
+
+export const BUSINESS_TYPES = ["Boutique", "Retail shop", "Reseller", "Online seller", "Exporter", "Designer / label", "Other"] as const;
+
+export const wholesaleApplicationSchema = z.object({
+  businessName: safeText(2, 120, "Business name"),
+  legalName: optionalText(160, "Legal name"),
+  gstin: optionalGstinSchema,
+  businessType: z.enum(BUSINESS_TYPES, { message: "Choose what kind of business you run" }),
+  addressLine: optionalText(200, "Address"),
+  city: safeText(2, 60, "City"),
+  state: z.string().refine((s) => s in STATE_NAME_TO_CODE, "Choose your state"),
+  pincode: pincodeSchema,
+  expectedVolume: optionalText(80, "Expected monthly purchase"),
+  socialUrl: optionalText(200, "Instagram / website"),
+  phone: z.union([z.literal(""), z.null(), z.undefined(), phoneSchema]).transform((v) => v || null),
+});
+
+export const wholesaleInquirySchema = z.object({
+  name: safeText(2, 80, "Name"),
+  phone: phoneSchema,
+  email: z.union([z.literal(""), z.null(), z.undefined(), emailSchema]).transform((v) => v || null),
+  businessName: optionalText(120, "Business name"),
+  city: optionalText(60, "City"),
+  categoriesOfInterest: z.array(z.string().trim().min(1).max(60)).max(10).default([]),
+  message: optionalText(1000, "Message"),
+  source: optionalText(80, "Source"),
+  /** Honeypot: people leave it empty; bots fill it. */
+  website: z.string().max(200).optional(),
+});
+
+export const quickOrderSchema = z.object({
+  items: z
+    .array(z.object({ variantId: cuidSchema, quantity: z.coerce.number().int().min(1).max(100_000) }))
+    .min(1, "Enter a quantity for at least one size")
+    .max(200, "Add at most 200 lines at a time"),
+});
+
+export const bankTransferSchema = z.object({
+  orderNumber: orderNumberSchema,
+  amount: rupeesSchema.refine((v) => v > 0, "Enter the amount you sent"),
+  reference: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z0-9]{6,30}$/, "Enter the UTR / reference number from your bank (6–30 letters or digits)"),
+  paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose the date you paid").optional(),
+});
+
+const tierFields = {
+  priceTierId: cuidSchema,
+  paymentTerms: z.enum(["PREPAID", "ADVANCE_BALANCE", "CREDIT"]),
+  advancePercent: z.union([z.literal(""), z.null(), z.undefined(), z.coerce.number().int().min(1).max(99)]).transform((v) => (v === "" || v == null ? null : v)),
+  creditLimit: z.union([z.literal(""), z.null(), z.undefined(), rupeesSchema]).transform((v) => (v === "" || v == null ? null : v)),
+  creditDays: z.union([z.literal(""), z.null(), z.undefined(), z.coerce.number().int().min(1).max(180)]).transform((v) => (v === "" || v == null ? null : v)),
+  staffNotes: optionalText(2000, "Notes"),
+};
+
+export const wholesaleAdminSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("approve"), profileId: cuidSchema, ...tierFields }),
+  z.object({ action: z.literal("update-terms"), profileId: cuidSchema, ...tierFields }),
+  z.object({ action: z.literal("reject"), profileId: cuidSchema, reason: safeText(5, 500, "Reason") }),
+  z.object({ action: z.literal("suspend"), profileId: cuidSchema, reason: optionalText(500, "Reason") }),
+  z.object({ action: z.literal("reinstate"), profileId: cuidSchema }),
+]);
+
+export const priceTierSchema = z.object({
+  name: safeText(2, 40, "Tier name"),
+  description: optionalText(200, "Description"),
+  isDefault: z.boolean().default(false),
+});
+
+export const inquiryUpdateSchema = z.object({
+  id: cuidSchema,
+  status: z.enum(["NEW", "CONTACTED", "CONVERTED", "CLOSED"]).optional(),
+  staffNotes: optionalText(2000, "Notes"),
+});

@@ -4,7 +4,14 @@ import { can, revokeAllSessions } from "@/lib/auth";
 import { RATE_LIMITS } from "@/lib/ratelimit";
 import { customerAdminSchema } from "@/lib/validators";
 import { audit } from "@/lib/audit";
-import { assertSimpleTransition, WHOLESALE_TRANSITIONS } from "@/server/orders/transitions";
+import { reviewApplication } from "@/server/wholesale/admin";
+
+async function defaultTierId(): Promise<string> {
+  const tier =
+    (await db.priceTier.findFirst({ where: { isDefault: true }, select: { id: true } })) ??
+    (await db.priceTier.create({ data: { name: "Standard", isDefault: true }, select: { id: true } }));
+  return tier.id;
+}
 
 export const runtime = "nodejs";
 
@@ -40,38 +47,33 @@ export const PATCH = handler(async (request) => {
     if (status === "BLOCKED") await revokeAllSessions(userId);
   }
 
-  if (wholesaleStatus || priceTierId !== undefined) {
+  if (wholesaleStatus || priceTierId) {
     const profile = target.wholesaleProfile;
     if (!profile) return fail("This customer hasn't applied for a wholesale account.", 409);
-    if (wholesaleStatus && wholesaleStatus !== profile.status) {
-      assertSimpleTransition(WHOLESALE_TRANSITIONS, profile.status, wholesaleStatus, "wholesale account");
-      if (wholesaleStatus === "REJECTED" && !rejectionReason) {
-        return fail("Please correct the highlighted fields", 422, { rejectionReason: "Tell the buyer why, so they can fix it." });
-      }
+    const terms = {
+      priceTierId: priceTierId ?? profile.priceTierId ?? (await defaultTierId()),
+      paymentTerms: profile.paymentTerms,
+      advancePercent: profile.advancePercent,
+      creditLimit: profile.creditLimit,
+      creditDays: profile.creditDays,
+      staffNotes: profile.staffNotes,
+    };
+    const action =
+      wholesaleStatus === "REJECTED"
+        ? rejectionReason
+          ? ({ action: "reject", reason: rejectionReason } as const)
+          : null
+        : wholesaleStatus === "SUSPENDED"
+          ? ({ action: "suspend", reason: rejectionReason ?? null } as const)
+          : wholesaleStatus === "APPROVED"
+            ? profile.status === "SUSPENDED"
+              ? ({ action: "reinstate" } as const)
+              : ({ action: "approve", ...terms } as const)
+            : ({ action: "update-terms", ...terms } as const);
+    if (!action) {
+      return fail("Please correct the highlighted fields", 422, { rejectionReason: "Tell the buyer why, so they can fix it." });
     }
-    if (priceTierId && !(await db.priceTier.findUnique({ where: { id: priceTierId }, select: { id: true } }))) {
-      return fail("Please correct the highlighted fields", 422, { priceTierId: "Choose a valid price tier." });
-    }
-    await db.$transaction([
-      db.wholesaleProfile.update({
-        where: { id: profile.id },
-        data: {
-          ...(wholesaleStatus && wholesaleStatus !== profile.status
-            ? {
-                status: wholesaleStatus,
-                reviewedAt: new Date(),
-                reviewedById: staff.id,
-                rejectionReason: wholesaleStatus === "REJECTED" ? rejectionReason : null,
-              }
-            : {}),
-          ...(priceTierId !== undefined ? { priceTierId } : {}),
-        },
-      }),
-      db.user.update({
-        where: { id: userId },
-        data: { customerType: (wholesaleStatus ?? profile.status) === "APPROVED" ? "WHOLESALE" : "RETAIL" },
-      }),
-    ]);
+    await reviewApplication(staff, profile.id, action);
   }
 
   await audit({

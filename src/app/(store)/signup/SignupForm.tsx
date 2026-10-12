@@ -66,11 +66,11 @@ export default function SignupForm({ defaultWholesale }: { defaultWholesale: boo
 
     toast(
       result.data.requiresApproval
-        ? "Account created. Our team will verify your business within one working day."
+        ? "Account created. Add your address and a document or two so we can verify your business."
         : "Welcome to Hastkala Fab!",
       "success",
     );
-    router.replace("/account");
+    router.replace(result.data.requiresApproval ? "/account/wholesale" : "/account");
     router.refresh();
   }
 

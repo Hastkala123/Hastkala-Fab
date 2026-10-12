@@ -12,11 +12,15 @@ export default function StoreLayout({
 }) {
   return (
     <div className="flex min-h-screen flex-col">
-      <Header />
+      <div className="print:hidden">
+        <Header />
+      </div>
       <main id="main" className="flex-1">
         {children}
       </main>
-      <Footer />
+      <div className="print:hidden">
+        <Footer />
+      </div>
     </div>
   );
 }

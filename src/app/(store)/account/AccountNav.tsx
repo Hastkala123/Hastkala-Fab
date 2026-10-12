@@ -14,8 +14,20 @@ const LINKS = [
   { href: "/account/security", label: "Password & security" },
 ];
 
-export default function AccountNav() {
+const WHOLESALE_LINKS = [
+  { href: "/account/wholesale/quick-order", label: "Quick order" },
+  { href: "/account/wholesale/catalogue", label: "Catalogue & prices" },
+  { href: "/account/wholesale/ledger", label: "Account statement" },
+];
+
+export default function AccountNav({ wholesaleStatus }: { wholesaleStatus: string | null }) {
   const pathname = usePathname();
+  const links = [
+    ...LINKS.slice(0, 2),
+    { href: "/account/wholesale", label: wholesaleStatus ? "Wholesale account" : "Apply for wholesale", exact: true },
+    ...(wholesaleStatus === "APPROVED" ? WHOLESALE_LINKS : []),
+    ...LINKS.slice(2),
+  ];
   const router = useRouter();
 
   async function logout() {
@@ -27,8 +39,8 @@ export default function AccountNav() {
   return (
     <nav aria-label="Account navigation" className="mt-4">
       <ul className="space-y-0.5">
-        {LINKS.map((link) => {
-          const active = link.exact
+        {links.map((link) => {
+          const active = "exact" in link && link.exact
             ? pathname === link.href
             : pathname.startsWith(link.href);
           return (
