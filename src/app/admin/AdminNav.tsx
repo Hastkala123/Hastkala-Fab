@@ -40,6 +40,13 @@ const SECTIONS: { title: string; links: NavLink[] }[] = [
     ],
   },
   {
+    title: "Content",
+    links: [
+      { href: "/admin/pages", label: "Pages", permission: "content.manage" },
+      { href: "/admin/faqs", label: "FAQs", permission: "content.manage" },
+    ],
+  },
+  {
     title: "Store",
     links: [{ href: "/admin/settings", label: "Settings", permission: "settings.manage" }],
   },

@@ -124,3 +124,21 @@ Brought forward ahead of M3 because the owner asked for it. The Wholesale link i
 **Tests:** 137 (96 unit, 41 integration), including approval → tier prices, the default-tier fallback, GSTIN re-review, credit limit, advance then balance, bank transfer kept through expiry and confirmed or rejected by staff, and retail shoppers refused credit or transfer.
 
 **Later:** emails and WhatsApp messages on approval or rejection (M6); GST invoices on the statement (M3).
+
+## Content pages (brought forward from M9/M10, 12 Oct 2026)
+
+Every footer link used to lead to a missing page. Now:
+
+- **About, Contact, Shipping, Returns, Privacy, Terms** at their short addresses, written in **Admin → Content → Pages** (any extra page lives at `/pages/{slug}` and can be listed in the footer). Starting text is seeded and published; Admin → Pages flags pages nobody has edited yet. **Owner: read each one and have the policies checked before launch.**
+- Page text uses a small safe format (`## heading`, `- list`, `**bold**`, `[link](/x)`) and **values from Settings** such as `{{shippingCharges}}`, `{{returnDays}}` or `{{phone}}`, so a policy can't disagree with checkout. A line whose value isn't set is left out. Live preview in the editor; drafts are visible only to staff.
+- **FAQ page** (`/faq`) from **Admin → Content → FAQs**: topics, drag-and-drop order, hide/show, FAQPage structured data. The sample FAQs were rewritten to state only what the shop actually does.
+- **Track order** (`/track`): order number plus the email or mobile it was placed with; limited per visitor and per order; shows status and items only.
+- **`/sitemap.xml`** (categories, products, wholesale and content pages) and **`/robots.txt`** (blocks admin, account, checkout; a non-production site blocks everything).
+- Footer links to a page appear only while it is published.
+
+## Deploying to Vercel
+
+- `npm run vercel-build` runs `prisma migrate deploy` then `next build`; `postinstall` generates the Prisma client.
+- Environment variables: `DATABASE_URL` (hosted PostgreSQL), `AUTH_SECRET` (32+ random characters), `IP_HASH_SALT` (16+), `NEXT_PUBLIC_SITE_URL` (the site's address), `CRON_SECRET` (32+); later `RAZORPAY_*`.
+- **Background work:** Vercel Hobby runs cron only once a day, so call `/api/cron/jobs` every minute from an outside scheduler (e.g. cron-job.org) with `Authorization: Bearer $CRON_SECRET`, or use Vercel Pro.
+- **Uploads don't persist on Vercel yet:** files are saved to the server's disk, which Vercel doesn't keep. Product photos and wholesale documents need a storage driver (Vercel Blob, S3 or Cloudinary) in `src/server/storage` before the shop goes live there.

@@ -3,7 +3,8 @@
  *
  *   Always (dev and production): staff roles, owner accounts, the default
  *   wholesale price tier, HSN codes with PLACEHOLDER tax rules, launch
- *   categories and their product fields.
+ *   categories and their product fields, and starting about / contact /
+ *   policy pages for the owner to review.
  *
  *   Development only: the sample catalogue, sample coupons, active FAQs and
  *   demo shopper + wholesale accounts.
@@ -20,7 +21,7 @@ import { passwordSchema } from "../src/lib/validators";
 import { gstinCheckCharacter } from "../src/lib/gstin";
 import { SYSTEM_ROLES } from "../src/server/auth/permissions";
 import { blockPrint, encodePng } from "./png.js";
-import { CATEGORY_TREE, COLOURWAYS, FAQS, PRODUCTS, type Motif } from "./seed-data.js";
+import { CATEGORY_TREE, COLOURWAYS, FAQS, PAGES, PRODUCTS, type Motif } from "./seed-data.js";
 
 // `tsx` does not load .env on its own; Prisma only reads DATABASE_URL from it.
 try {
@@ -483,6 +484,23 @@ async function seedFaqs(): Promise<void> {
 }
 
 /**
+ * About, contact and policy pages, published so the links across the shop
+ * (footer, checkout, sign-up) work from day one. Their values (shipping fee,
+ * return days, contact details) come from Settings. Only missing pages are
+ * added, so the owner's edits are kept; Admin → Pages flags pages still on
+ * this starting text.
+ */
+async function seedPages(): Promise<void> {
+  const existing = new Set((await db.page.findMany({ select: { slug: true } })).map((p) => p.slug));
+  const fresh = PAGES.filter((p) => !existing.has(p.slug));
+  const now = new Date();
+  for (const [position, page] of fresh.entries()) {
+    await db.page.create({ data: { ...page, status: "PUBLISHED", publishedAt: now, position } });
+  }
+  console.log(`  ✓ ${fresh.length} pages`);
+}
+
+/**
  * Words shoppers use for the same thing. Editable in Admin → Search; the
  * seed only adds terms that aren't there yet, so owner edits are kept.
  */
@@ -614,6 +632,7 @@ async function main() {
   const categories = await seedCategories(hsnIds, !isProduction);
   const attributeIds = await seedAttributes(categories);
   await seedFaqs();
+  await seedPages();
   await seedSynonyms();
 
   let demoPassword: string | null = null;

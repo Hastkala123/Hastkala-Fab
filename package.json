@@ -7,6 +7,8 @@
     "test": "vitest run",
     "dev": "next dev",
     "build": "next build",
+    "postinstall": "prisma generate",
+    "vercel-build": "prisma migrate deploy && next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -49,5 +51,12 @@
   },
   "overrides": {
     "deepmerge-ts": "^8.0.0"
+  },
+  "allowScripts": {
+    "@prisma/client": true,
+    "@prisma/engines": true,
+    "prisma": true,
+    "esbuild": true,
+    "unrs-resolver": true
   }
 }

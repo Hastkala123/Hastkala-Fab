@@ -631,3 +631,37 @@ export const inquiryUpdateSchema = z.object({
   status: z.enum(["NEW", "CONTACTED", "CONVERTED", "CLOSED"]).optional(),
   staffNotes: optionalText(2000, "Notes"),
 });
+
+// ---------------------------------------------------------------------------
+// Content (Admin → Content) and order tracking
+// ---------------------------------------------------------------------------
+
+export const pageSchema = z.object({
+  title: safeText(2, 120, "Title"),
+  slug: slugSchema,
+  type: z.enum(["POLICY", "INFO", "LANDING"]),
+  status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]),
+  body: safeText(1, 50_000, "Page text"),
+  metaTitle: optionalText(70, "Search title"),
+  metaDescription: optionalText(170, "Search description"),
+  showInFooter: z.boolean().default(false),
+});
+export type PageInput = z.output<typeof pageSchema>;
+
+export const faqSchema = z.object({
+  question: safeText(5, 300, "Question"),
+  answer: safeText(2, 5000, "Answer"),
+  group: safeText(2, 40, "Topic"),
+  isActive: z.boolean().default(true),
+});
+export type FaqInput = z.output<typeof faqSchema>;
+
+export const trackOrderSchema = z.object({
+  orderNumber: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^HF-?\d{6,9}$/, "Enter the order number from your confirmation, like HF-100001")
+    .transform((v) => (v.includes("-") ? v : `HF-${v.slice(2)}`)),
+  contact: safeText(5, 254, "Email or mobile number"),
+});

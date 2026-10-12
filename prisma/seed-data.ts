@@ -413,89 +413,288 @@ export const PRODUCTS: ProductSeed[] = [
   },
 ];
 
+/**
+ * Starting FAQs and pages. Text in {{braces}} is filled from Settings when
+ * shown (see src/lib/content-text.ts), so a policy can't drift from what
+ * checkout actually does. The owner reviews and edits all of it in
+ * Admin → Content before launch.
+ */
 export const FAQS = [
   {
     category: "Orders",
     question: "How long does delivery take?",
-    answer:
-      "Orders are dispatched from Jaipur within 24-48 hours. Metro cities typically receive delivery in 3-5 working days, and the rest of India in 5-8 working days. You will receive a tracking number by email and SMS as soon as your parcel is handed to the courier.",
+    answer: "{{dispatchText}}.\nDelivery then takes {{deliveryText}}.\nFollow your order in [My orders](/account/orders) or on the [Track order](/track) page.",
   },
   {
     category: "Orders",
-    question: "Can I modify or cancel my order after placing it?",
+    question: "Can I change or cancel my order?",
     answer:
-      "Yes, as long as the order has not yet been packed. Go to My Orders, open the order and use Cancel Order. Once the status shows Packed or Shipped we can no longer stop it — but you can still refuse delivery or raise a return once it arrives.",
+      "You can cancel an order from [My orders](/account/orders) until it is packed. If you paid online, the refund starts automatically. To change an order, cancel it and place a new one, or [contact us](/contact) quickly.",
   },
   {
     category: "Orders",
     question: "Do you offer Cash on Delivery?",
-    answer:
-      "Yes, Cash on Delivery is available on retail orders up to ₹10,000 across most PIN codes in India. Wholesale orders require prepayment or an agreed credit arrangement.",
+    answer: "{{codAvailability}}\nWholesale orders have their own payment options, shown at checkout.",
   },
   {
     category: "Products",
     question: "Why does the print look slightly different from the photo?",
     answer:
-      "Because it is printed by hand. Each piece is pressed with carved wooden blocks by an artisan, so motif placement, colour depth and registration vary a little from piece to piece. This is the signature of genuine Sanganeri work — a perfectly uniform print would indicate machine screen printing, not hand block.",
+      "Because it is printed by hand. Each piece is pressed with carved wooden blocks, one impression at a time, so motif placement and colour depth vary a little from piece to piece. That is the mark of real hand-block printing, not a fault.",
   },
   {
     category: "Products",
-    question: "Will the colours run in the wash?",
+    question: "How should I wash hand-block prints?",
     answer:
-      "Natural dyes release a small amount of excess colour in the first one or two washes. Wash the garment separately in cold water the first time, do not soak it, and dry it in shade. After that it is colourfast. Indigo pieces in particular will soften over time rather than fade patchily.",
+      "Hand-block prints can release a little colour in the first washes. Wash them separately in cold water the first few times, don't soak them, and dry them in the shade.",
   },
   {
     category: "Products",
     question: "How do I choose the right size?",
     answer:
-      "Every product page has a size chart with garment measurements in inches — measure a garment you already own and compare, rather than going by your usual label size. Our cotton is pre-shrunk, but if you are between two sizes we recommend the larger one.",
+      "Where a product has a size chart, you'll find it on the product page. Compare it with a garment you own that fits you well. If you're between two sizes, choose the larger one.",
   },
   {
     category: "Returns",
     question: "What is your return policy?",
     answer:
-      "You have 7 days from delivery to request a return or exchange, provided the item is unused, unwashed and has its original tags attached. Raise the request from My Orders or through the Help Centre. Once we receive and inspect the item, refunds are issued to the original payment method within 5-7 working days.",
+      "You can ask for a return within {{returnDays}} days of delivery.\n{{returnConditions}}\nStart from the [Help Centre](/account/support), choosing the order. Read the full [returns policy](/returns-policy).",
   },
   {
     category: "Returns",
-    question: "Who pays for return shipping?",
+    question: "What if my item arrives damaged or wrong?",
     answer:
-      "If the item is defective, damaged or not what you ordered, we cover return shipping entirely. For a change of mind or a size exchange, a flat ₹79 reverse-pickup fee is deducted from the refund.",
-  },
-  {
-    category: "Returns",
-    question: "Can I return fabric sold by the metre?",
-    answer:
-      "Cut fabric cannot be returned unless it arrived defective, since we cannot resell a cut length. Please order a sample first if you are unsure about the colour or weave — contact us through the Help Centre and we will arrange one.",
+      "Tell us through the [Help Centre](/account/support) as soon as you can, with photos, and we'll replace it or refund it in full.",
   },
   {
     category: "Wholesale",
     question: "How do I open a wholesale account?",
     answer:
-      "Register at /signup and choose Wholesale as your account type, providing your business name and GSTIN. Our team verifies new trade accounts within one working day. Once approved, wholesale pricing appears automatically across the site when you are signed in.",
+      "[Apply here](/account/wholesale) with your business details and GSTIN. We review every application and switch on trade prices once your account is approved. See [Wholesale](/wholesale) for how it works.",
   },
   {
     category: "Wholesale",
-    question: "What is the minimum order quantity?",
+    question: "Is there a minimum order quantity?",
     answer:
-      "MOQ is 10 pieces per design for garments and 20 metres for running fabric. Mixed sizes and colourways within the same design count toward the same MOQ. Larger slabs at 50+ and 100+ units carry further discounts — contact us for a quotation.",
-  },
-  {
-    category: "Wholesale",
-    question: "Do you take custom colourways or private label orders?",
-    answer:
-      "Yes. We can print existing blocks in your specified colours, and for orders above 300 pieces we can carve new blocks to your design. Lead time is typically 3-4 weeks for custom colours and 6-8 weeks for new blocks. Raise a Wholesale enquiry through the Help Centre to start.",
+      "Each design shows its minimum quantity once your account is approved. Sizes and colours of the same design count together.",
   },
   {
     category: "Payments",
     question: "What payment methods do you accept?",
     answer:
-      "UPI, all major credit and debit cards, net banking, and Cash on Delivery on eligible retail orders. All online payments are processed through an encrypted, PCI-DSS compliant gateway — we never see or store your full card details.",
+      "UPI, debit and credit cards, and net banking, processed securely by Razorpay — we never see or store your card details.\n{{codAvailability}}",
   },
   {
     category: "Payments",
-    question: "Is GST included in the price shown?",
-    answer:
-      "Prices shown on product pages are exclusive of GST; the applicable tax is calculated and shown separately at checkout. Textiles under ₹1,000 per piece attract 5% GST and those at ₹1,000 or above attract 12%. A GST invoice is emailed with every order and is available for download from My Orders.",
+    question: "Are prices inclusive of GST?",
+    answer: "Retail prices include GST.\n{{wholesaleGst}}",
+  },
+];
+
+type StartingPage = {
+  slug: string;
+  title: string;
+  type: "POLICY" | "INFO";
+  metaDescription: string;
+  body: string;
+};
+
+export const PAGES: StartingPage[] = [
+  {
+    slug: "about",
+    title: "Our story",
+    type: "INFO",
+    metaDescription:
+      "Hastkala Fab brings hand-block printed kurtis, suits, sarees and cotton bedsheets from Sanganer, Jaipur — for you and for retailers across India.",
+    body: `{{storeName}} brings hand-block printed kurtis, salwar suits, sarees and cotton bedsheets from Sanganer, Jaipur, to you.
+
+## The craft
+Sanganer, on the southern edge of Jaipur, has printed cloth by hand for generations. Each design is carved into wooden blocks. A printer dips a block in colour and presses it onto the fabric by hand, one impression at a time, lining each one up by eye. A design with several colours needs a block for every colour, so each piece passes through many hands before it is finished.
+
+That is why no two pieces are exactly alike. A slight shift in a motif, a little more or less colour — these are the marks of hand printing, not faults.
+
+## What we make
+- Kurtis
+- Salwar suits
+- Sarees
+- Cotton bedsheets
+
+## Retail and wholesale
+Shop single pieces here, delivered across India. Boutiques, retailers and resellers can [apply for a wholesale account](/wholesale) for trade prices and GST invoices.
+
+## Talk to us
+Questions about a print, a size or an order? [Contact us](/contact) — we're happy to help.`,
+  },
+  {
+    slug: "contact",
+    title: "Contact us",
+    type: "INFO",
+    metaDescription: "Contact Hastkala Fab, Sanganer, Jaipur — about an order, a print, a size or wholesale buying.",
+    body: `We'd love to hear from you — about a print, a size, an order, or buying for your shop.
+
+**About an order?** Sign in and raise it from the [Help Centre](/account/support), choosing the order, so we can see its details straight away. You can also [track an order](/track) without signing in.
+
+**Buying for a shop?** Send a [wholesale enquiry](/wholesale#enquiry) and we'll call you back.`,
+  },
+  {
+    slug: "shipping-policy",
+    title: "Shipping & Delivery",
+    type: "POLICY",
+    metaDescription: "Shipping charges, dispatch and delivery times, Cash on Delivery and order tracking at Hastkala Fab.",
+    body: `We ship across India from Jaipur, Rajasthan.
+
+## Dispatch and delivery
+- {{dispatchText}}.
+- Delivery then takes {{deliveryText}}.
+- These are our courier partners' usual times. Remote areas, festivals and bad weather can add a few days.
+
+## Shipping charges
+- {{shippingCharges}}
+- The shipping charge is shown at checkout before you pay.
+- {{codAvailability}}
+- {{wholesaleShipping}}
+
+## Tracking your order
+Follow your order in [My orders](/account/orders), or on the [Track order](/track) page with your order number and the email or mobile number you ordered with. Once it ships, the tracking details appear there.
+
+## If a delivery fails
+If the courier can't deliver after their attempts, the parcel comes back to us and we'll contact you to send it again. A second dispatch may be charged. If you no longer want a prepaid order, we refund the order value once the parcel is back with us.
+
+## Damaged or wrong parcel
+If your parcel arrives damaged or with the wrong item, tell us through the [Help Centre](/account/support) as soon as you can, with photos, and we'll put it right. See our [returns policy](/returns-policy).
+
+Questions? [Contact us](/contact).`,
+  },
+  {
+    slug: "returns-policy",
+    title: "Returns, Exchanges & Refunds",
+    type: "POLICY",
+    metaDescription: "How returns, exchanges, cancellations and refunds work at Hastkala Fab.",
+    body: `We want you to love what you ordered. If something isn't right, here is how returns work.
+
+## Returns and exchanges
+- You can ask for a return within {{returnDays}} days of delivery.
+- {{returnConditions}}
+- {{exchangeNote}}
+- Each piece is printed by hand, so small variations in print and colour are part of the craft, not a fault.
+
+## How to return
+- Sign in, open the [Help Centre](/account/support) and raise a request for the order, telling us which item and why.
+- We'll confirm the return and how to send the item back.
+- Once it reaches us and we've checked it, we send your refund or exchange.
+
+## Refunds
+- Online payments are refunded to the original payment method. Banks usually show the money within 5–7 working days of the refund.
+- Cash on Delivery orders are refunded to a bank account or UPI ID you give us.
+- {{returnShippingDeduction}} is kept from refunds of returns that aren't due to a fault on our side, to cover return shipping.
+
+## Damaged, faulty or wrong items
+If an item arrives damaged, faulty or isn't what you ordered, tell us through the [Help Centre](/account/support) as soon as you can, with photos. We'll replace it or refund it in full.
+
+## Cancelling an order
+You can cancel an order from [My orders](/account/orders) until it is packed. If you paid online, the refund starts automatically.
+
+## Wholesale orders
+Returns on wholesale orders follow the terms agreed with you. [Contact us](/contact) if something is wrong with a delivery.`,
+  },
+  {
+    slug: "privacy-policy",
+    title: "Privacy Policy",
+    type: "POLICY",
+    metaDescription: "What personal data Hastkala Fab collects, why, who it is shared with, and your rights.",
+    body: `This policy explains what personal data {{storeName}} collects, why, and the choices you have. It applies to this website and to orders placed with us.
+
+Business: {{legalName}}
+Address: {{address}}
+
+## What we collect
+- **Account details:** your name, email address, mobile number and password (stored only as a secure hash — nobody can read it).
+- **Order details:** delivery and billing addresses, what you bought, and the status of your orders and payments.
+- **Wholesale details:** if you apply for a wholesale account — business name, GSTIN, address and the documents you upload.
+- **Messages:** what you send us through the Help Centre, enquiries and reviews.
+- **Security records:** a scrambled (hashed) form of your IP address and your browser type, kept to protect accounts and stop abuse.
+
+## Payments
+Online payments are handled by our payment partner, Razorpay. You enter card, UPI and bank details with them; we never see or store your full card number.
+
+## Why we use it
+- To take, deliver and support your orders, and to issue invoices.
+- To run your account and, for wholesale buyers, to review and manage the trade account.
+- To keep the website secure and prevent fraud.
+- To send new prints and offers by email — only if you agreed, and you can stop at any time.
+- To meet our legal duties, such as GST and accounting records.
+
+## Who we share it with
+Only what each needs to do its job:
+- Courier partners — your name, address and mobile number, to deliver your parcel.
+- Razorpay — to process payments and refunds.
+- The services that host this website and send our order emails and messages.
+- Government authorities, when the law requires it.
+
+We do not sell your personal data.
+
+## Cookies
+We use only the cookies this website needs to work: one keeps you signed in, one remembers your bag, and one protects forms against misuse. We don't use advertising or tracking cookies.
+
+## How long we keep it
+Account details are kept while your account is open. Orders and invoices are kept for as long as tax and accounting laws require. Security records are kept only for a short time.
+
+## Your rights
+You can ask to see, correct or delete your personal data, or withdraw a consent you gave. Some records, such as invoices, must be kept by law even after you close your account.
+Write to us at {{email}}.
+
+## Grievance officer
+- Name: {{grievanceOfficer}}
+- Email: {{grievanceEmail}}
+- Phone: {{grievancePhone}}
+
+We acknowledge complaints within 48 hours and aim to resolve them within one month. If you are not satisfied with our answer, you can approach the Data Protection Board of India.
+
+## Changes
+When we change this policy, we update this page and its date.`,
+  },
+  {
+    slug: "terms",
+    title: "Terms & Conditions",
+    type: "POLICY",
+    metaDescription: "The terms for using the Hastkala Fab website and buying from us, retail and wholesale.",
+    body: `These terms apply when you use this website or buy from {{storeName}}. By placing an order you agree to them.
+
+## About us
+This website is run by {{legalName}}.
+Address: {{address}}
+GSTIN: {{gstin}}
+Email: {{email}}
+
+## Your account
+Keep your password private; you are responsible for orders placed from your account. Tell us at once if you think someone else has used it. We may suspend accounts that are misused.
+
+## Products and prices
+- Our products are printed by hand, so colours and motifs vary a little from piece to piece and from the photos.
+- Prices are in Indian rupees. Retail prices include GST. {{wholesaleGst}}
+- We work to keep every price and description right. If we find a mistake in the price of something you ordered, we'll contact you before dispatch; if you don't want to go ahead, we cancel the order and refund any payment in full.
+
+## Orders and payment
+- An online order is accepted once its payment is received; a Cash on Delivery order once it is placed.
+- We may decline or cancel an order — for example if an item has run out or a payment looks fraudulent. Anything you paid is refunded in full.
+- Online payments are processed by Razorpay.
+
+## Delivery, returns and refunds
+See our [shipping policy](/shipping-policy) and [returns policy](/returns-policy).
+
+## Wholesale accounts
+Wholesale prices are for businesses we approve, and we may decline or withdraw an approval. Payment terms, such as advance or credit, are as agreed with you and shown in your account. Returns on wholesale orders follow the terms agreed with you.
+
+## Reviews and our content
+Reviews must be your own honest experience of a product you bought. We may remove reviews that are abusive, off-topic or misleading. The designs, photos and text on this website belong to us; please don't copy them without permission.
+
+## Liability
+To the extent the law allows, our liability for an order is limited to the amount you paid for it. Nothing in these terms takes away your rights as a consumer under Indian law.
+
+## Law and disputes
+These terms are governed by the laws of India, and the courts at Jaipur, Rajasthan have jurisdiction. Please [contact us](/contact) first — most problems are quickly sorted out.
+
+## Changes
+We may update these terms. The version on this page when you place an order applies to that order.`,
   },
 ];

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { formatPrice } from "@/lib/money";
 import { getCategories } from "@/server/catalog/products";
 import { getSettings } from "@/server/settings";
+import { footerPages, isFixedPage, pagePath, publishedPageSlugs } from "@/server/content/pages";
 import NewsletterForm from "./NewsletterForm";
 
 const helpLinks = [
@@ -21,7 +22,22 @@ const companyLinks = [
 ];
 
 export default async function Footer() {
-  const [categories, settings] = await Promise.all([getCategories(), getSettings()]);
+  const [categories, settings, published, extraPages] = await Promise.all([
+    getCategories(),
+    getSettings(),
+    publishedPageSlugs(),
+    footerPages(),
+  ]);
+  // Pages from Admin → Content appear once published; the rest always exist.
+  const live = (link: { href: string }) => {
+    const slug = link.href.slice(1);
+    return !isFixedPage(slug) || slug === "contact" || published.has(slug);
+  };
+  const help = helpLinks.filter(live);
+  const company = [
+    ...companyLinks.filter(live),
+    ...extraPages.map((p) => ({ href: pagePath(p.slug), label: p.title })),
+  ];
   // Shop links follow the categories (and their order) set in Admin → Categories.
   const shopLinks = [
     ...categories
@@ -73,8 +89,8 @@ export default async function Footer() {
 
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-3 lg:col-span-8">
             <FooterColumn title="Shop" links={shopLinks} />
-            <FooterColumn title="Help" links={helpLinks} />
-            <FooterColumn title="Company" links={companyLinks} />
+            <FooterColumn title="Help" links={help} />
+            <FooterColumn title="Company" links={company} />
           </div>
         </div>
 
@@ -106,8 +122,12 @@ export default async function Footer() {
             </p>
           </div>
           <p className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <Link href="/privacy-policy" className="transition hover:text-cotton-50">Privacy</Link>
-            <Link href="/terms" className="transition hover:text-cotton-50">Terms</Link>
+            {published.has("privacy-policy") && (
+              <Link href="/privacy-policy" className="transition hover:text-cotton-50">Privacy</Link>
+            )}
+            {published.has("terms") && (
+              <Link href="/terms" className="transition hover:text-cotton-50">Terms</Link>
+            )}
             <Link href="/sitemap.xml" className="transition hover:text-cotton-50">Sitemap</Link>
           </p>
         </div>
