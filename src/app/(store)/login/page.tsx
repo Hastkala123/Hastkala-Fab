@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { safeRedirectPath } from "@/lib/routes";
 import LoginForm from "./LoginForm";
 
 export const metadata: Metadata = {
@@ -59,16 +60,7 @@ export default async function LoginPage({
   );
 }
 
-/**
- * Only ever redirect to a path on this site. Accepting an arbitrary `next`
- * value would turn the login page into an open redirect — a standard phishing
- * primitive ("hastkalafab.com/login?next=https://evil.example").
- */
+/** Only ever redirect to a path on this site (see safeRedirectPath). */
 function safeNext(next: string | undefined): string {
-  if (!next) return "/account";
-  // Must start with a single slash; "//host" and "/\host" are protocol-relative.
-  if (!next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) {
-    return "/account";
-  }
-  return next;
+  return safeRedirectPath(next);
 }

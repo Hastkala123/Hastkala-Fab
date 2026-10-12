@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { safeRedirectPath } from "@/lib/routes";
 import { formatIndianMobile } from "@/lib/phone";
 import AccountNav from "./AccountNav";
 
@@ -15,7 +17,12 @@ export default async function AccountLayout({
   children: React.ReactNode;
 }) {
   const user = await getCurrentUser();
-  if (!user) redirect("/login?next=/account");
+  if (!user) {
+    // Back to the exact page after sign-in (the proxy sets x-pathname).
+    const path = (await headers()).get("x-pathname");
+    const next = path?.startsWith("/account") ? safeRedirectPath(path) : "/account";
+    redirect(`/login?next=${encodeURIComponent(next)}`);
+  }
 
   return (
     <div className="hf-container py-8 sm:py-12">

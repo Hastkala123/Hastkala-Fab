@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { safeRedirectPath } from "@/lib/routes";
 import { ALL_PERMISSIONS, type Permission } from "@/server/auth/permissions";
 import AdminNav from "./AdminNav";
 
@@ -28,7 +30,11 @@ export default async function AdminLayout({
 }) {
   const user = await getCurrentUser();
 
-  if (!user) redirect("/login?next=/admin");
+  if (!user) {
+    const path = (await headers()).get("x-pathname");
+    const next = path?.startsWith("/admin") ? safeRedirectPath(path, "/admin") : "/admin";
+    redirect(`/login?next=${encodeURIComponent(next)}`);
+  }
   if (!user.isStaff) {
     // A signed-in non-admin is sent to their own account rather than shown a
     // 403, so the portal's existence is not confirmed to a curious customer.

@@ -10,7 +10,12 @@ import { db } from "./db";
 import { env, isProd } from "./env";
 import { hasPermission, type Permission } from "@/server/auth/permissions";
 
-export const SESSION_COOKIE = "hf_session";
+/**
+ * In production the __Host- prefix makes browsers accept the cookie only when
+ * it is Secure, host-only and path=/, so no subdomain or plain-HTTP response
+ * can plant or overwrite a session.
+ */
+export const SESSION_COOKIE = isProd ? "__Host-hf_session" : "hf_session";
 export const CART_COOKIE = "hf_cart";
 const SESSION_DAYS = 7;
 const BCRYPT_ROUNDS = 12;

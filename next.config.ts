@@ -1,11 +1,8 @@
 import type { NextConfig } from "next";
 
 /**
- * Security headers applied to every response.
- * CSP is intentionally strict: no inline scripts except Next's hydration
- * bootstrap (which requires 'unsafe-inline' fallback for older browsers that
- * ignore strict-dynamic). Images are restricted to self + data: for blur
- * placeholders.
+ * Security headers applied to every response. The Content-Security-Policy is
+ * set per request in src/proxy.ts, because it carries a fresh script nonce.
  */
 const securityHeaders = [
   { key: "X-DNS-Prefetch-Control", value: "on" },
@@ -16,7 +13,8 @@ const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "X-XSS-Protection", value: "1; mode=block" },
+  // The old XSS auditor could be abused to blank out parts of a page; "0" switches it off (CSP protects instead).
+  { key: "X-XSS-Protection", value: "0" },
   {
     key: "Permissions-Policy",
     value: "camera=(), microphone=(), geolocation=(), interest-cohort=()",
@@ -24,27 +22,6 @@ const securityHeaders = [
   // "allow-popups": Razorpay opens bank / 3-D Secure pages in a popup that must report back.
   { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
   { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
-  {
-    key: "Content-Security-Policy",
-    value: [
-      "default-src 'self'",
-      // Next.js injects inline bootstrap scripts; style-src needs inline for
-      // Tailwind's runtime-injected critical CSS.
-      // Razorpay Checkout is the only third-party script.
-      "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com" +
-        (process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""),
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "font-src 'self' https://fonts.gstatic.com data:",
-      "img-src 'self' data: blob: https://*.razorpay.com",
-      "connect-src 'self' https://*.razorpay.com",
-      "frame-src https://api.razorpay.com https://checkout.razorpay.com",
-      "form-action 'self'",
-      "frame-ancestors 'none'",
-      "base-uri 'self'",
-      "object-src 'none'",
-      "upgrade-insecure-requests",
-    ].join("; "),
-  },
 ];
 
 const nextConfig: NextConfig = {

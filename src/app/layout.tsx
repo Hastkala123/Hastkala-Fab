@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { connection } from "next/server";
 import { env } from "@/lib/env";
 import { ToastProvider } from "@/components/ui/Toast";
 import "./globals.css";
@@ -58,7 +59,10 @@ export const viewport: Viewport = {
   themeColor: "#1e3a5f",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Every page is rendered per request, so its scripts carry that request's
+  // CSP nonce (see src/proxy.ts); a page built ahead of time would have none.
+  await connection();
   return (
     <html lang="en-IN">
       <head>

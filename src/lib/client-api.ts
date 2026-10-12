@@ -17,6 +17,19 @@ function readCsrfToken(): string {
   return match ? decodeURIComponent(match.slice(CSRF_COOKIE.length + 1)) : "";
 }
 
+/**
+ * Sends the request with the current token. If the token cookie had expired
+ * (a tab left open for a day), the 403 response carries a fresh cookie from
+ * the proxy, so the request is sent once more with it.
+ */
+async function sendWithCsrf(url: string, init: RequestInit & { headers: Record<string, string> }): Promise<Response> {
+  const token = readCsrfToken();
+  const response = await fetch(url, { ...init, headers: { ...init.headers, "x-csrf-token": token } });
+  const fresh = readCsrfToken();
+  if (response.status !== 403 || !fresh || fresh === token) return response;
+  return fetch(url, { ...init, headers: { ...init.headers, "x-csrf-token": fresh } });
+}
+
 export type ApiResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string; fields?: Record<string, string>; status: number };
@@ -28,13 +41,10 @@ export async function apiRequest<T = unknown>(
   const { method = "POST", body, signal } = options;
 
   try {
-    const response = await fetch(url, {
+    const response = await sendWithCsrf(url, {
       method,
       signal,
-      headers: {
-        "Content-Type": "application/json",
-        "x-csrf-token": readCsrfToken(),
-      },
+      headers: { "Content-Type": "application/json" },
       // Never send our cookies to a third-party origin.
       credentials: "same-origin",
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -75,9 +85,9 @@ export async function apiUpload<T = unknown>(
   formData: FormData,
 ): Promise<ApiResult<T>> {
   try {
-    const response = await fetch(url, {
+    const response = await sendWithCsrf(url, {
       method: "POST",
-      headers: { "x-csrf-token": readCsrfToken() },
+      headers: {},
       credentials: "same-origin",
       body: formData,
     });

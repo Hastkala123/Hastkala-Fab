@@ -3,6 +3,7 @@ import "server-only";
 import { headers } from "next/headers";
 import { db } from "./db";
 import { sha256 } from "./auth";
+import { clientIpFrom } from "./client-ip";
 import { env } from "./env";
 
 export type RateLimitResult = {
@@ -50,16 +51,10 @@ export async function rateLimit(
   return { allowed: true, remaining: Math.max(0, limit - count), retryAfterSeconds: 0 };
 }
 
-/**
- * Best-effort client IP. Proxy headers can be forged, so this is used only for
- * rate limiting and hashed audit trails — never for authorisation. On Vercel
- * the platform overwrites x-forwarded-for, so the first entry is the client.
- */
+/** Best-effort client IP, used only for rate limiting and hashed audit trails — never for authorisation. */
 export async function getClientIp(): Promise<string> {
   const hdrs = await headers();
-  const forwarded = hdrs.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]!.trim();
-  return hdrs.get("x-real-ip") ?? "0.0.0.0";
+  return clientIpFrom(hdrs.get("x-real-ip"), hdrs.get("x-forwarded-for"));
 }
 
 export async function getUserAgent(): Promise<string | null> {
